@@ -100,15 +100,30 @@ def _extract_business_details(page):
 
     business = {}
 
-    # Wait briefly for the detail panel to load
+    # Wait for the business details panel to fully load
     try:
-        page.wait_for_selector('h1', timeout=8000)
+        page.wait_for_selector('h1.fontHeadlineLarge', timeout=8000)
     except Exception:
-        pass
+        try:
+            page.wait_for_selector('div[role="main"]', timeout=5000)
+        except Exception:
+            pass
 
-    # Name
-    name_el = page.query_selector("h1")
-    business["name"] = clean_text(name_el.inner_text()) if name_el else ""
+    # Name - try multiple selectors and filter out "Results"
+    name_el = page.query_selector('h1.fontHeadlineLarge') or \
+              page.query_selector('h1[class*="DUwDvf"]') or \
+              page.query_selector('div[role="main"] h1') or \
+              page.query_selector('h1')
+              
+    if name_el:
+        name_text = clean_text(name_el.inner_text())
+        # Filter out generic text like "Results"
+        if name_text and name_text.lower() not in ["results", "result", ""]:
+            business["name"] = name_text
+        else:
+            business["name"] = ""
+    else:
+        business["name"] = ""
 
     # Rating
     try:
