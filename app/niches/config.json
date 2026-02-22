@@ -1,0 +1,47 @@
+{
+  "medspas": {
+    "label": "Medical Spas",
+    "service_terms": ["botox", "filler", "laser", "skin", "body", "facial", "injection", "treatment", "rejuvenation"],
+    "common_services": ["Botox", "Dermal Fillers", "Laser Hair Removal", "Chemical Peels", "Microneedling", "CoolSculpting", "IV Therapy", "HydraFacial"]
+  },
+  "restaurants": {
+    "label": "Restaurants",
+    "service_terms": ["menu", "cuisine", "dining", "brunch", "lunch", "dinner", "catering", "reservation"],
+    "common_services": ["Dine-in", "Takeout", "Catering", "Private Dining", "Happy Hour", "Brunch", "Delivery"]
+  },
+  "dentists": {
+    "label": "Dental Practices",
+    "service_terms": ["dental", "tooth", "teeth", "implant", "whitening", "orthodontic", "cleaning", "crown"],
+    "common_services": ["Teeth Cleaning", "Teeth Whitening", "Dental Implants", "Invisalign", "Root Canal", "Crowns", "Veneers", "Emergency Dentistry"]
+  },
+  "gyms": {
+    "label": "Gyms & Fitness Centers",
+    "service_terms": ["fitness", "workout", "gym", "training", "class", "yoga", "pilates", "crossfit", "membership"],
+    "common_services": ["Gym Membership", "Personal Training", "Group Classes", "Yoga", "Pilates", "Spinning", "CrossFit", "Nutrition Coaching"]
+  },
+  "salons": {
+    "label": "Hair & Beauty Salons",
+    "service_terms": ["hair", "color", "cut", "style", "nail", "wax", "facial", "makeup", "blowout"],
+    "common_services": ["Haircut", "Hair Color", "Highlights", "Blowout", "Keratin Treatment", "Manicure", "Pedicure", "Waxing", "Makeup"]
+  },
+  "lawyers": {
+    "label": "Law Firms",
+    "service_terms": ["legal", "attorney", "law", "litigation", "consultation", "contract", "defense", "counsel"],
+    "common_services": ["Legal Consultation", "Contract Review", "Litigation", "Family Law", "Criminal Defense", "Estate Planning", "Business Law", "Personal Injury"]
+  },
+  "accountants": {
+    "label": "Accounting Firms",
+    "service_terms": ["tax", "accounting", "bookkeeping", "payroll", "audit", "financial", "cpa", "advisory"],
+    "common_services": ["Tax Preparation", "Bookkeeping", "Payroll", "Audit", "Business Advisory", "Financial Planning", "Estate & Trust", "IRS Representation"]
+  },
+  "real_estate": {
+    "label": "Real Estate Agents",
+    "service_terms": ["property", "home", "listing", "buyer", "seller", "realtor", "mortgage", "investment"],
+    "common_services": ["Home Buying", "Home Selling", "Property Management", "Investment Properties", "Commercial Real Estate", "Rental Properties", "Market Analysis"]
+  },
+  "default": {
+    "label": "General Business",
+    "service_terms": ["service", "product", "solution", "offering", "package", "plan"],
+    "common_services": []
+  }
+}
