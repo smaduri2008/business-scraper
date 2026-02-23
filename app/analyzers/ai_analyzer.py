@@ -70,9 +70,21 @@ def analyze_business(business_data, niche):
 
 def _build_prompt(data, niche):
     """Build the analysis prompt from scraped data."""
-    services = ", ".join(data.get("services", [])) or "unknown"
-    prices = ", ".join(data.get("prices", [])) or "unknown"
-    team = ", ".join(data.get("team_members", []))[:200] or "unknown"
+    
+    # Handle services
+    services = ", ".join(data.get("services", [])[:10]) or "unknown"
+    
+    # Handle prices - support both dict and string format
+    price_list = data.get("prices", [])
+    if price_list and isinstance(price_list[0], dict):
+        prices = ", ".join([p.get("price", "") for p in price_list[:10]]) or "unknown"
+    elif price_list:
+        prices = ", ".join([str(p) for p in price_list[:10]]) or "unknown"
+    else:
+        prices = "unknown"
+    
+    # Handle team members
+    team = ", ".join(data.get("team_members", [])[:10]) or "unknown"
 
     ig = data.get("instagram") or {}
     ig_summary = (

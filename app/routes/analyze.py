@@ -127,6 +127,17 @@ def analyze():
         business_result["prices"] = website_data.get("prices", [])
         business_result["team_members"] = website_data.get("team_members", [])
 
+        # 2.5 Grade website
+        website_grade = {}
+        if website_data:
+            try:
+                from app.analyzers.website_grader import grade_website
+                website_grade = grade_website(website_data)
+            except Exception as exc:
+                logger.error("Website grading failed for %s: %s", raw.get("website"), exc)
+        
+        business_result["website_grade"] = website_grade
+
         # 3. Scrape Instagram
         ig_data = None
         try:
