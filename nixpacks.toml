@@ -1,8 +1,13 @@
 [phases.setup]
-nixPkgs = ['python311', 'playwright', 'chromium']
+nixPkgs = ['python311']
 
 [phases.install]
-cmds = ['pip install -r requirements.txt', 'playwright install chromium']
+cmds = [
+  'pip install --upgrade pip',
+  'pip install -r requirements.txt',
+  'playwright install-deps',
+  'playwright install chromium'
+]
 
 [start]
-cmd = 'gunicorn run:app --bind 0.0.0.0:$PORT'
+cmd = 'gunicorn run:app --bind 0.0.0.0:$PORT --timeout 300 --workers 1'
