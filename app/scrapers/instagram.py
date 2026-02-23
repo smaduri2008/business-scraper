@@ -15,49 +15,61 @@ def scrape_instagram(business_name, website_instagram_url=None):
     1. Use the URL found on the website (if any).
     2. Otherwise, try generated username candidates.
 
-    Returns a dict with profile data, or None if nothing found.
+    Returns a dict with profile data, or None if scraping fails/unavailable.
     """
     try:
         import instaloader
     except ImportError:
-        logger.error("instaloader is not installed. Run: pip install instaloader")
+        logger.warning("instaloader is not installed. Skipping Instagram scraping.")
         return None
 
-    loader = instaloader.Instaloader()
+    try:
+        loader = instaloader.Instaloader()
 
-    # Build list of usernames to try
-    usernames_to_try = []
+        # Build list of usernames to try
+        usernames_to_try = []
 
-    if website_instagram_url:
-        parsed = extract_instagram_username_from_url(website_instagram_url)
-        if parsed:
-            usernames_to_try.append(parsed)
+        if website_instagram_url:
+            parsed = extract_instagram_username_from_url(website_instagram_url)
+            if parsed:
+                usernames_to_try.append(parsed)
 
-    if not usernames_to_try:
-        usernames_to_try = generate_instagram_usernames(business_name)
+        if not usernames_to_try:
+            usernames_to_try = generate_instagram_usernames(business_name)
 
-    for username in usernames_to_try:
-        try:
-            profile = instaloader.Profile.from_username(loader.context, username)
-            engagement_rate = _calculate_engagement(profile)
-            return {
-                "username": profile.username,
-                "followers": profile.followers,
-                "following": profile.followees,
-                "posts": profile.mediacount,
-                "engagement_rate": engagement_rate,
-                "bio": profile.biography,
-                "is_verified": profile.is_verified,
-                "is_business": profile.is_business_account,
-            }
-        except instaloader.exceptions.ProfileNotExistsException:
-            logger.debug("Instagram profile not found: %s", username)
-        except instaloader.exceptions.ConnectionException as exc:
-            logger.warning("Instagram connection error for %s: %s", username, exc)
-        except Exception as exc:
-            logger.warning("Instagram error for %s: %s", username, exc)
+        for username in usernames_to_try:
+            try:
+                profile = instaloader.Profile.from_username(loader.context, username)
+                engagement_rate = _calculate_engagement(profile)
+                return {
+                    "username": profile.username,
+                    "followers": profile.followers,
+                    "following": profile.followees,
+                    "posts": profile.mediacount,
+                    "engagement_rate": engagement_rate,
+                    "bio": profile.biography,
+                    "is_verified": profile.is_verified,
+                    "is_business": profile.is_business_account,
+                }
+            except instaloader.exceptions.ProfileNotExistsException:
+                logger.debug("Instagram profile not found: %s", username)
+            except instaloader.exceptions.ConnectionException as exc:
+                logger.warning("Instagram rate limited or connection error for %s: %s. Skipping Instagram.", username, exc)
+                return None  # Skip Instagram entirely on rate limit
+            except instaloader.exceptions.TooManyRequestsException as exc:
+                logger.warning("Instagram rate limit hit: %s. Skipping Instagram scraping.", exc)
+                return None  # Skip Instagram entirely on rate limit
+            except Exception as exc:
+                logger.warning("Instagram error for %s: %s", username, exc)
 
-    return None
+        # No profiles found after trying all usernames
+        logger.info("No Instagram profile found for '%s'. Skipping Instagram data.", business_name)
+        return None
+
+    except Exception as e:
+        # Catch any unexpected errors and skip Instagram gracefully
+        logger.warning("Instagram scraping failed for '%s': %s. Skipping Instagram.", business_name, e)
+        return None
 
 
 def _calculate_engagement(profile):
