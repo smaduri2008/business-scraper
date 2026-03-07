@@ -1,6 +1,6 @@
 """
-Universal website grading system focused on Design & SEO.
-Grades websites out of 100 points.
+Universal website grading system for local service businesses.
+Grades websites out of 100 points based on graded criteria.
 """
 import json
 import logging
@@ -15,15 +15,16 @@ GROQ_MODEL = "llama-3.3-70b-versatile"
 
 def grade_website(website_data):
     """
-    Grade a website out of 100 based on Design (50pts) and SEO (50pts).
+    Grade a website out of 100 based on Website Quality (50pts) and Digital Presence (50pts).
     
     Returns dict with:
       - total_score: 0-100
-      - design_score: 0-50
-      - seo_score: 0-50
+      - website_quality_score: 0-50
+      - digital_presence_score: 0-50
       - strengths: list
       - weaknesses: list
       - recommendations: list
+      - detailed_breakdown: dict with individual category scores
     """
     api_key = current_app.config.get("GROQ_API_KEY", "")
     
@@ -48,15 +49,16 @@ def grade_website(website_data):
             {
                 "role": "system",
                 "content": (
-                    "You are an expert web designer and SEO consultant. "
-                    "Grade websites objectively based on design quality and SEO best practices. "
+                    "You are an expert digital marketing consultant specializing in local service businesses. "
+                    "Grade websites based on conversion optimization, user experience, and digital marketing best practices. "
+                    "Be realistic and objective. Most websites score 50-75. Only exceptional sites score 85+. "
                     "Always reply with valid JSON only."
                 ),
             },
             {"role": "user", "content": prompt},
         ],
         "temperature": 0.2,
-        "max_tokens": 800,
+        "max_tokens": 1200,
     }
     
     try:
@@ -94,8 +96,11 @@ def _build_grading_prompt(data):
     links_count = len(data.get("links", []))
     has_mobile_viewport = data.get("has_mobile_viewport", False)
     cta_buttons = data.get("cta_buttons", [])
+    services = data.get("services", [])
+    prices = data.get("prices", [])
+    team_members = data.get("team_members", [])
     
-    return f"""Grade this website out of 100 points based on Design (50 points) and SEO (50 points).
+    return f"""Grade this local service business website out of 100 points.
 
 Website: {url}
 
@@ -103,45 +108,99 @@ TECHNICAL DATA:
 - SSL Certificate: {"Yes" if has_ssl else "No"}
 - Meta Title: {meta_title}
 - Meta Description: {meta_desc}
-- H1 Tags: {len(h1_tags)} found - {', '.join(h1_tags[:3])}
+- H1 Tags: {len(h1_tags)} found - {', '.join(h1_tags[:3]) if h1_tags else 'None'}
 - Images: {images_count} total, {images_with_alt} with alt text ({int(images_with_alt/max(images_count,1)*100)}%)
 - Internal Links: {links_count}
 - Mobile Viewport Tag: {"Yes" if has_mobile_viewport else "No"}
-- Call-to-Action Buttons: {len(cta_buttons)} found - {', '.join(cta_buttons[:3])}
+- Call-to-Action Buttons: {len(cta_buttons)} found - {', '.join(cta_buttons[:3]) if cta_buttons else 'None'}
 
-CONTENT PREVIEW:
-Services: {', '.join(data.get('services', [])[:5]) or 'None found'}
-Text Length: {data.get('text_length', 0)} characters
+BUSINESS DATA:
+- Services Listed: {len(services)} - {', '.join(services[:5]) if services else 'None found'}
+- Prices Displayed: {"Yes" if prices else "No"} ({len(prices)} items)
+- Team Members Shown: {"Yes" if team_members else "No"} ({len(team_members)} members)
+- Text Content Length: {data.get('text_length', 0)} characters
 
-GRADING RUBRIC:
+GRADING RUBRIC (100 points total):
 
-DESIGN & UX (50 points):
-- Visual appeal & professionalism (15 pts)
-- Mobile responsiveness (10 pts) - check viewport tag, CTA visibility
-- Page load optimization (10 pts) - image count, size indicators
-- Clear navigation & structure (10 pts) - links, sections
-- Call-to-action visibility (5 pts) - contact buttons, booking
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+WEBSITE QUALITY (50 points)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-SEO & DISCOVERABILITY (50 points):
-- Meta tags quality (10 pts) - title and description present and descriptive
-- Header structure (10 pts) - proper H1 usage
-- Image optimization (10 pts) - alt text percentage
-- SSL certificate (5 pts) - HTTPS
-- Content quality (10 pts) - text length, keyword usage, service descriptions
-- Internal linking (5 pts) - navigation structure
+1. CONVERSION OPTIMIZATION (15 points)
+   - Clear primary offer or front-end offer visible (3 pts)
+   - Multiple clear CTAs (book now, contact, call) (3 pts)
+   - Contact information easily accessible (phone, form) (3 pts)
+   - Pricing transparency (prices shown or "free consultation") (3 pts)
+   - Social proof visible (reviews, testimonials, before/after) (3 pts)
+
+2. USER EXPERIENCE & DESIGN (15 points)
+   - Professional, modern design (5 pts)
+   - Mobile responsive (viewport tag present) (5 pts)
+   - Fast-loading indicators (reasonable image count) (3 pts)
+   - Clear navigation structure (2 pts)
+
+3. CONTENT QUALITY (10 points)
+   - Services clearly described (3 pts)
+   - Adequate text content (500+ characters) (2 pts)
+   - Team/provider information shown (builds trust) (3 pts)
+   - Educational or helpful content present (2 pts)
+
+4. TECHNICAL SEO BASICS (10 points)
+   - HTTPS/SSL enabled (2 pts)
+   - Meta title present and descriptive (2 pts)
+   - Meta description present (2 pts)
+   - Proper H1 tag usage (1-2 H1s) (2 pts)
+   - Image alt text present (50%+ images) (2 pts)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+DIGITAL PRESENCE & FINDABILITY (50 points)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+5. LOCAL SEO INDICATORS (15 points)
+   - Location mentioned in meta title (5 pts)
+   - Service + location keywords in content (5 pts)
+   - Local area targeting evident (neighborhood, city mentioned) (5 pts)
+
+6. TRUST & CREDIBILITY (15 points)
+   - Team photos or provider visible (5 pts)
+   - Professional credentials or certifications mentioned (5 pts)
+   - Real business address or location indicators (3 pts)
+   - Trust badges, associations, or partnerships (2 pts)
+
+7. LEAD GENERATION SETUP (10 points)
+   - Multiple contact methods offered (3 pts)
+   - Booking/scheduling system present or linked (4 pts)
+   - Lead magnets or free consultation offers (3 pts)
+
+8. ENGAGEMENT & RETENTION (10 points)
+   - Social media links present (2 pts)
+   - Email signup or newsletter option (2 pts)
+   - Blog or educational content section (3 pts)
+   - Before/after gallery or portfolio (3 pts)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 Return ONLY this JSON structure:
 {{
-  "total_score": 75,
-  "design_score": 38,
-  "seo_score": 37,
-  "strengths": ["strength1", "strength2", "strength3"],
-  "weaknesses": ["weakness1", "weakness2", "weakness3"],
-  "recommendations": ["recommendation1", "recommendation2", "recommendation3"]
+  "total_score": 72,
+  "website_quality_score": 38,
+  "digital_presence_score": 34,
+  "strengths": ["Clear CTAs with multiple booking options", "Strong service descriptions", "Good use of social proof"],
+  "weaknesses": ["No pricing transparency", "Missing team member information", "Weak local SEO signals"],
+  "recommendations": ["Add transparent pricing or starting prices", "Include team bios with photos", "Optimize meta title with location"],
+  "detailed_breakdown": {{
+    "conversion_optimization": 12,
+    "user_experience": 13,
+    "content_quality": 7,
+    "technical_seo": 6,
+    "local_seo": 10,
+    "trust_credibility": 9,
+    "lead_generation": 7,
+    "engagement": 8
+  }}
 }}
 
-Be objective and realistic. Most websites score 60-80. Only exceptional sites score 90+."""
-
+Be realistic and harsh when needed. Most local service sites score 45-70. Sites with major issues should score below 50. Only truly optimized sites with all elements should score 80+."""
 
 def _parse_grade(content):
     """Parse and validate grade response from AI."""
@@ -157,11 +216,12 @@ def _parse_grade(content):
     
     return {
         "total_score": int(data.get("total_score", 0)),
-        "design_score": int(data.get("design_score", 0)),
-        "seo_score": int(data.get("seo_score", 0)),
+        "website_quality_score": int(data.get("website_quality_score", 0)),
+        "digital_presence_score": int(data.get("digital_presence_score", 0)),
         "strengths": data.get("strengths", []),
         "weaknesses": data.get("weaknesses", []),
         "recommendations": data.get("recommendations", []),
+        "detailed_breakdown": data.get("detailed_breakdown", {}),
     }
 
 
@@ -169,9 +229,10 @@ def _empty_grade():
     """Return empty grade when grading fails."""
     return {
         "total_score": 0,
-        "design_score": 0,
-        "seo_score": 0,
+        "website_quality_score": 0,
+        "digital_presence_score": 0,
         "strengths": [],
         "weaknesses": [],
         "recommendations": [],
+        "detailed_breakdown": {},
     }
