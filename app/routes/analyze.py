@@ -112,6 +112,22 @@ def analyze():
     })
 
 
+@analyze_bp.route('/migrate-db-columns', methods=['GET'])
+def migrate_db_columns():
+    """Temporary migration endpoint - delete after use"""
+    from sqlalchemy import text
+    try:
+        session = get_session()
+        session.execute(text('ALTER TABLE businesses ADD COLUMN job_id VARCHAR(50)'))
+        session.commit()
+        session.execute(text('ALTER TABLE businesses ADD COLUMN position INTEGER'))
+        session.commit()
+        session.close()
+        return {"status": "success", "message": "Columns added!"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}, 500
+
+
 @analyze_bp.route("/analyze/<job_id>/status", methods=["GET"])
 def job_status(job_id):
     """
