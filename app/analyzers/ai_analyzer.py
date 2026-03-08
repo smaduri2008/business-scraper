@@ -18,7 +18,8 @@ def analyze_business(business_data, niche):
 
     Returns a dict with:
       revenue_streams, estimated_revenue_tier, pricing_strategy,
-      service_quality_score, competitive_assessment, niche_specific_insights
+      service_quality_score, competitive_assessment, niche_specific_insights,
+      opportunity_score
     """
     api_key = current_app.config.get("GROQ_API_KEY", "")
     
@@ -62,7 +63,19 @@ def analyze_business(business_data, niche):
         response.raise_for_status()
         content = response.json()["choices"][0]["message"]["content"]
         logger.info(f"Groq API response received for {business_data.get('name', 'Unknown')}")
-        return _parse_analysis(content)
+        
+        # Parse the analysis result
+        result = _parse_analysis(content)
+        
+        # Calculate and add opportunity score
+        opportunity_score = _calculate_opportunity_score(
+            business_data, 
+            business_data.get("website_grade", {})
+        )
+        result["opportunity_score"] = opportunity_score
+        
+        return result
+        
     except requests.RequestException as exc:
         logger.error("Groq API request failed: %s", exc)
     except (KeyError, IndexError, json.JSONDecodeError) as exc:
@@ -152,6 +165,7 @@ def _parse_analysis(content):
         "service_quality_reasoning": data.get("service_quality_reasoning", ""),
         "competitive_assessment": data.get("competitive_assessment", ""),
         "niche_specific_insights": data.get("niche_specific_insights", ""),
+        "opportunity_score": data.get("opportunity_score", 0),
     }
 
 
@@ -165,4 +179,73 @@ def _empty_analysis():
         "service_quality_reasoning": None,
         "competitive_assessment": None,
         "niche_specific_insights": None,
+        "opportunity_score": 0,
     }
+
+
+def _calculate_opportunity_score(business_data, website_grade):
+    """
+    Calculate how good of an opportunity this business is for marketing services.
+    Higher score = better target (bad website but successful business).
+    
+    Perfect target: Busy business (good reviews) with terrible website.
+    Bad target: Great website (nothing to improve) or failing business (can't afford you).
+    """
+    score = 50  # Start at neutral
+    
+    # 1. Website quality (inverted - worse website = better opportunity)
+    website_score = website_grade.get("total_score", 50)
+    if website_score == 0:
+        score -= 30  # No website at all = too much work
+    elif website_score < 40:
+        score += 25  # Terrible website = great opportunity
+    elif website_score < 55:
+        score += 20  # Bad website = good opportunity
+    elif website_score < 70:
+        score += 10  # Mediocre website = decent opportunity
+    elif website_score < 85:
+        score += 0   # Good website = neutral
+    else:
+        score -= 20  # Excellent website = nothing to improve
+    
+    # 2. Business health (good business = can afford you)
+    rating = business_data.get("rating", 0)
+    reviews = business_data.get("reviews_count", 0)
+    
+    if rating >= 4.5 and reviews >= 50:
+        score += 20  # Successful business
+    elif rating >= 4.0 and reviews >= 20:
+        score += 15  # Decent business
+    elif rating >= 3.5 and reviews >= 10:
+        score += 5   # Okay business
+    elif reviews < 5:
+        score -= 15  # Too new or struggling
+    
+    # 3. Digital presence (some foundation = easier sell)
+    ig_data = business_data.get("instagram", {})
+    if ig_data and ig_data.get("followers", 0) > 1000:
+        score += 10  # Has audience, understands digital
+    elif ig_data and ig_data.get("followers", 0) > 500:
+        score += 5
+    
+    # 4. Service business indicators (has team = has budget)
+    team_count = len(business_data.get("team_members", []))
+    services_count = len(business_data.get("services", []))
+    
+    if team_count >= 3:
+        score += 10  # Multi-person business = bigger budget
+    elif team_count >= 1:
+        score += 5
+    
+    if services_count >= 5:
+        score += 5  # Diverse services = more revenue
+    
+    # 5. Website exists but needs work (ideal scenario)
+    has_website = bool(business_data.get("website"))
+    if has_website and 30 < website_score < 60:
+        score += 15  # PERFECT - has website but it's bad
+    elif not has_website:
+        score -= 10  # No website = need to build from scratch
+    
+    # Cap between 0-100
+    return max(0, min(100, score))
