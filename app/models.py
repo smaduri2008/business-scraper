@@ -9,10 +9,14 @@ from sqlalchemy.orm import relationship
 from app.database import Base
 
 
+# Add these fields to the Business model
+
 class Business(Base):
     __tablename__ = "businesses"
 
     id = Column(Integer, primary_key=True)
+    job_id = Column(String(50), index=True)  # NEW
+    position = Column(Integer)  # NEW
     name = Column(String(255), nullable=False)
     niche = Column(String(100))
     location = Column(String(255))
@@ -23,7 +27,8 @@ class Business(Base):
     reviews_count = Column(Integer)
     hours = Column(Text)
     scraped_at = Column(DateTime, default=datetime.utcnow)
-
+    
+    # ... rest stays the same
     instagram = relationship(
         "InstagramData", back_populates="business", uselist=False, cascade="all, delete-orphan"
     )
