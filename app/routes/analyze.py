@@ -115,15 +115,35 @@ def analyze():
 @analyze_bp.route('/migrate-db-columns', methods=['GET'])
 def migrate_db_columns():
     """Temporary migration endpoint - delete after use"""
-    from sqlalchemy import text
+    from sqlalchemy import text, inspect
     try:
         session = get_session()
-        session.execute(text('ALTER TABLE businesses ADD COLUMN job_id VARCHAR(50)'))
-        session.commit()
-        session.execute(text('ALTER TABLE businesses ADD COLUMN position INTEGER'))
-        session.commit()
+        engine = session.get_bind()
+        inspector = inspect(engine)
+        
+        # Get existing columns
+        columns = [col['name'] for col in inspector.get_columns('businesses')]
+        
+        results = []
+        
+        # Add job_id if missing
+        if 'job_id' not in columns:
+            session.execute(text('ALTER TABLE businesses ADD COLUMN job_id VARCHAR(50)'))
+            session.commit()
+            results.append("job_id column added")
+        else:
+            results.append("job_id already exists")
+        
+        # Add position if missing
+        if 'position' not in columns:
+            session.execute(text('ALTER TABLE businesses ADD COLUMN position INTEGER'))
+            session.commit()
+            results.append("position column added")
+        else:
+            results.append("position already exists")
+        
         session.close()
-        return {"status": "success", "message": "Columns added!"}
+        return {"status": "success", "message": ", ".join(results), "columns": columns}
     except Exception as e:
         return {"status": "error", "message": str(e)}, 500
 
