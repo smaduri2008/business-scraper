@@ -4,6 +4,7 @@ Flask application factory.
 import logging
 from flask import Flask
 from flask_cors import CORS
+from app.routes.migrate import migrate_bp
 
 from app.config import Config
 from app.database import init_db
@@ -29,5 +30,6 @@ def create_app(config_class=Config):
     # Register blueprints
     from app.routes.analyze import analyze_bp
     app.register_blueprint(analyze_bp, url_prefix="/api")
+    app.register_blueprint(migrate_bp)
 
     return app
