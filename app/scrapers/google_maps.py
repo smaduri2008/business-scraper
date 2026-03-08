@@ -59,30 +59,35 @@ def scrape_google_maps(niche, location, max_results=10):
                     page.evaluate("(el) => el.scrollBy(0, 1000)", feed)
                     random_delay(1.0, 1.5)
 
-            # Collect listing links
+            # Collect listing HREFs instead of elements (to avoid stale references)
             listings = page.query_selector_all('a[href*="/maps/place/"]')
             logger.info("Found %d listing links", len(listings))
 
+            # Extract hrefs first before clicking
+            hrefs_to_visit = []
             seen_hrefs = set()
+            
             for listing in listings:
-                if len(results) >= max_results:
+                if len(hrefs_to_visit) >= max_results:
                     break
-
+                    
                 href = listing.get_attribute("href") or ""
-                if href in seen_hrefs:
-                    continue
-                seen_hrefs.add(href)
+                if href and href not in seen_hrefs:
+                    hrefs_to_visit.append(href)
+                    seen_hrefs.add(href)
 
+            # Now visit each URL directly instead of clicking
+            for href in hrefs_to_visit:
                 try:
-                    listing.click()
-                    random_delay()
+                    page.goto(href, wait_until="domcontentloaded", timeout=10000)
+                    random_delay(0.5, 1.0)
 
                     business = _extract_business_details(page)
                     if business.get("name"):
                         results.append(business)
                         logger.info("Scraped: %s", business.get("name"))
                 except Exception as exc:
-                    logger.warning("Error clicking listing: %s", exc)
+                    logger.warning("Error navigating to %s: %s", href, exc)
 
             browser.close()
     except Exception as exc:

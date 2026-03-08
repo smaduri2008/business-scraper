@@ -24,7 +24,11 @@ def scrape_instagram(business_name, website_instagram_url=None):
         return None
 
     try:
-        loader = instaloader.Instaloader()
+        # Configure loader to be more gentle and avoid rate limits
+        loader = instaloader.Instaloader(
+            max_connection_attempts=1,  # Don't retry on failure
+            request_timeout=10.0,       # Fail fast
+        )
 
         # Build list of usernames to try
         usernames_to_try = []
@@ -37,27 +41,28 @@ def scrape_instagram(business_name, website_instagram_url=None):
         if not usernames_to_try:
             usernames_to_try = generate_instagram_usernames(business_name)
 
+        # Only try the first username to avoid rate limits
+        usernames_to_try = usernames_to_try[:1]
+
         for username in usernames_to_try:
             try:
                 profile = instaloader.Profile.from_username(loader.context, username)
-                engagement_rate = _calculate_engagement(profile)
+                # Don't calculate engagement to avoid extra requests
                 return {
                     "username": profile.username,
                     "followers": profile.followers,
                     "following": profile.followees,
                     "posts": profile.mediacount,
-                    "engagement_rate": engagement_rate,
+                    "engagement_rate": 0.0,  # Skip to avoid rate limits
                     "bio": profile.biography,
                     "is_verified": profile.is_verified,
                     "is_business": profile.is_business_account,
                 }
             except instaloader.exceptions.ProfileNotExistsException:
                 logger.debug("Instagram profile not found: %s", username)
-            except instaloader.exceptions.ConnectionException as exc:
-                logger.warning("Instagram rate limited or connection error for %s: %s. Skipping Instagram.", username, exc)
-                return None  # Skip Instagram entirely on rate limit
-            except instaloader.exceptions.TooManyRequestsException as exc:
-                logger.warning("Instagram rate limit hit: %s. Skipping Instagram scraping.", exc)
+            except (instaloader.exceptions.ConnectionException, 
+                    instaloader.exceptions.TooManyRequestsException) as exc:
+                logger.warning("Instagram rate limited for %s. Skipping Instagram entirely.", username)
                 return None  # Skip Instagram entirely on rate limit
             except Exception as exc:
                 logger.warning("Instagram error for %s: %s", username, exc)
