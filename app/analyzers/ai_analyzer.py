@@ -38,14 +38,17 @@ def analyze_business(business_data, niche):
             {
                 "role": "system",
                 "content": (
-                    "You are an expert business analyst specialising in revenue modelling. "
+                    "You are an expert business analyst specializing in local service businesses. "
+                    "Analyze each business individually and provide varied, specific assessments. "
+                    "Service quality scores should range from 3.0 to 9.5 based on actual indicators. "
+                    "Provide detailed reasoning for your scores. "
                     "Always reply with a valid JSON object and nothing else."
                 ),
             },
             {"role": "user", "content": prompt},
         ],
-        "temperature": 0.3,
-        "max_tokens": 1024,
+        "temperature": 0.8,  # INCREASED from 0.3 for more variety
+        "max_tokens": 1500,  # INCREASED from 1024 for detailed reasoning
     }
 
     try:
@@ -95,7 +98,7 @@ def _build_prompt(data, niche):
         else "No Instagram found"
     )
 
-    return f"""Analyse this {niche} business and return ONLY a JSON object with these exact keys:
+    return f"""Analyze this {niche} business SPECIFICALLY and INDIVIDUALLY. DO NOT give generic scores.
 
 Business: {data.get('name', 'Unknown')}
 Location: {data.get('location', 'Unknown')}
@@ -106,15 +109,27 @@ Prices: {prices}
 Team: {team}
 Social: {ig_summary}
 
+CRITICAL INSTRUCTIONS:
+1. Service quality score should range from 3.0 to 9.5 based on actual indicators
+2. Consider: rating ({data.get('rating')}), review count ({data.get('reviews_count')}), team size, services offered, pricing shown, social presence
+3. Provide SPECIFIC reasoning referencing this business's data
+4. DO NOT default to scores like 7.5 or 8.0 for every business
+5. Low-quality indicators (low rating, no team, no prices) = 3.0-5.5
+6. Average indicators (decent rating, some info) = 6.0-7.5
+7. High-quality indicators (high rating, many reviews, full info) = 7.6-9.5
+
 Required JSON structure:
 {{
-  "revenue_streams": ["stream1", "stream2", "stream3"],
+  "revenue_streams": ["specific stream 1", "specific stream 2", "specific stream 3"],
   "estimated_revenue_tier": "Low|Medium|High",
   "pricing_strategy": "Budget|Mid-tier|Premium|Luxury",
   "service_quality_score": 7.5,
-  "competitive_assessment": "Brief 1-2 sentence assessment",
-  "niche_specific_insights": "Brief 1-2 sentence niche insight"
-}}"""
+  "service_quality_reasoning": "Detailed explanation: This business has a {data.get('rating')} rating with {data.get('reviews_count')} reviews. {'Team of ' + str(len(data.get('team_members', []))) + ' shown' if data.get('team_members') else 'No team information'}. {'Pricing shown' if prices != 'unknown' else 'No pricing transparency'}. Social presence: {ig_summary}. Based on these factors...",
+  "competitive_assessment": "Specific 2-3 sentence assessment referencing this business's actual data",
+  "niche_specific_insights": "Specific 2-3 sentence insight about THIS business in the {niche} niche"
+}}
+
+BE SPECIFIC. VARY YOUR SCORES. REFERENCE ACTUAL DATA."""
 
 
 def _parse_analysis(content):
@@ -134,6 +149,7 @@ def _parse_analysis(content):
         "estimated_revenue_tier": data.get("estimated_revenue_tier", "Unknown"),
         "pricing_strategy": data.get("pricing_strategy", "Unknown"),
         "service_quality_score": float(data.get("service_quality_score", 0)),
+        "service_quality_reasoning": data.get("service_quality_reasoning", ""),
         "competitive_assessment": data.get("competitive_assessment", ""),
         "niche_specific_insights": data.get("niche_specific_insights", ""),
     }
@@ -146,6 +162,7 @@ def _empty_analysis():
         "estimated_revenue_tier": None,
         "pricing_strategy": None,
         "service_quality_score": None,
+        "service_quality_reasoning": None,
         "competitive_assessment": None,
         "niche_specific_insights": None,
     }

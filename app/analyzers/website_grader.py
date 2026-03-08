@@ -24,7 +24,7 @@ def grade_website(website_data):
       - strengths: list
       - weaknesses: list
       - recommendations: list
-      - detailed_breakdown: dict with individual category scores
+      - detailed_breakdown: dict with individual category scores AND reasoning
     """
     api_key = current_app.config.get("GROQ_API_KEY", "")
     
@@ -51,14 +51,16 @@ def grade_website(website_data):
                 "content": (
                     "You are an expert digital marketing consultant specializing in local service businesses. "
                     "Grade websites based on conversion optimization, user experience, and digital marketing best practices. "
-                    "Be realistic and objective. Most websites score 50-75. Only exceptional sites score 85+. "
+                    "Be critical and vary your scores based on actual differences between websites. "
+                    "Provide detailed reasoning for each score. "
+                    "Scores should range from 20-95 based on quality. Don't cluster around 60. "
                     "Always reply with valid JSON only."
                 ),
             },
             {"role": "user", "content": prompt},
         ],
-        "temperature": 0.2,
-        "max_tokens": 1200,
+        "temperature": 0.7,  # INCREASED from 0.2 for more variety
+        "max_tokens": 2000,  # INCREASED from 1200 for detailed reasoning
     }
     
     try:
@@ -100,7 +102,7 @@ def _build_grading_prompt(data):
     prices = data.get("prices", [])
     team_members = data.get("team_members", [])
     
-    return f"""Grade this local service business website out of 100 points.
+    return f"""Grade this local service business website out of 100 points. BE CRITICAL and DETAILED.
 
 Website: {url}
 
@@ -180,6 +182,14 @@ DIGITAL PRESENCE & FINDABILITY (50 points)
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+IMPORTANT INSTRUCTIONS:
+1. Vary your scores significantly based on actual quality differences
+2. Provide SPECIFIC reasoning for each category score
+3. Don't default to middle scores (avoid clustering around 60-70)
+4. Be harsh on sites with real problems (score 30-50)
+5. Be generous with well-optimized sites (score 80-95)
+6. Reference specific elements from the data in your reasoning
+
 Return ONLY this JSON structure:
 {{
   "total_score": 72,
@@ -189,18 +199,42 @@ Return ONLY this JSON structure:
   "weaknesses": ["No pricing transparency", "Missing team member information", "Weak local SEO signals"],
   "recommendations": ["Add transparent pricing or starting prices", "Include team bios with photos", "Optimize meta title with location"],
   "detailed_breakdown": {{
-    "conversion_optimization": 12,
-    "user_experience": 13,
-    "content_quality": 7,
-    "technical_seo": 6,
-    "local_seo": 10,
-    "trust_credibility": 9,
-    "lead_generation": 7,
-    "engagement": 8
+    "conversion_optimization": {{
+      "score": 12,
+      "reasoning": "Has {len(cta_buttons)} CTAs which is good, but pricing is not shown reducing transparency. Social proof is missing."
+    }},
+    "user_experience": {{
+      "score": 13,
+      "reasoning": "Mobile viewport tag present, {images_count} images suggests reasonable load time. Navigation appears clear."
+    }},
+    "content_quality": {{
+      "score": 7,
+      "reasoning": "{len(services)} services listed is excellent, but only {data.get('text_length', 0)} characters of content. {'Team shown' if team_members else 'No team information'}."
+    }},
+    "technical_seo": {{
+      "score": 6,
+      "reasoning": "{'SSL enabled' if has_ssl else 'NO SSL - major issue'}. Meta title: {meta_title[:50]}... {'Present' if meta_desc else 'MISSING meta description'}. {len(h1_tags)} H1 tags found."
+    }},
+    "local_seo": {{
+      "score": 10,
+      "reasoning": "Analyze if location appears in title, services mention location, local area targeting."
+    }},
+    "trust_credibility": {{
+      "score": 9,
+      "reasoning": "{'Team of ' + str(len(team_members)) + ' shown' if team_members else 'NO team shown'}. Look for credentials, address, trust badges."
+    }},
+    "lead_generation": {{
+      "score": 7,
+      "reasoning": "{len(cta_buttons)} CTAs found. Check for booking system, lead magnets, multiple contact methods."
+    }},
+    "engagement": {{
+      "score": 8,
+      "reasoning": "Look for social links, email signup, blog, portfolio. Evaluate engagement potential."
+    }}
   }}
 }}
 
-Be realistic and harsh when needed. Most local service sites score 45-70. Sites with major issues should score below 50. Only truly optimized sites with all elements should score 80+."""
+DO NOT give similar scores to different websites. Each site should have a unique score based on its actual quality."""
 
 def _parse_grade(content):
     """Parse and validate grade response from AI."""
@@ -214,6 +248,20 @@ def _parse_grade(content):
     
     data = json.loads(content)
     
+    # Parse detailed breakdown with reasoning
+    detailed_breakdown = {}
+    raw_breakdown = data.get("detailed_breakdown", {})
+    
+    for key, value in raw_breakdown.items():
+        if isinstance(value, dict):
+            detailed_breakdown[key] = value
+        else:
+            # Backwards compatible - if just a number
+            detailed_breakdown[key] = {
+                "score": int(value),
+                "reasoning": ""
+            }
+    
     return {
         "total_score": int(data.get("total_score", 0)),
         "website_quality_score": int(data.get("website_quality_score", 0)),
@@ -221,7 +269,7 @@ def _parse_grade(content):
         "strengths": data.get("strengths", []),
         "weaknesses": data.get("weaknesses", []),
         "recommendations": data.get("recommendations", []),
-        "detailed_breakdown": data.get("detailed_breakdown", {}),
+        "detailed_breakdown": detailed_breakdown,
     }
 
 
