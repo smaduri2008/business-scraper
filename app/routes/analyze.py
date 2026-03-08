@@ -313,6 +313,7 @@ def _save_to_db(session, business_data, ig_data, analysis_data, website_grade, j
             estimated_revenue_tier=analysis_data.get("estimated_revenue_tier"),
             pricing_strategy=analysis_data.get("pricing_strategy"),
             service_quality_score=analysis_data.get("service_quality_score"),
+            service_quality_reasoning=analysis_data.get("service_quality_reasoning"),
             competitive_assessment=analysis_data.get("competitive_assessment"),
             niche_specific_insights=analysis_data.get("niche_specific_insights"),
         )

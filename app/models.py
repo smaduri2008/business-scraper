@@ -9,8 +9,6 @@ from sqlalchemy.orm import relationship
 from app.database import Base
 
 
-# Add these fields to the Business model
-
 class Business(Base):
     __tablename__ = "businesses"
 
@@ -28,7 +26,6 @@ class Business(Base):
     hours = Column(Text)
     scraped_at = Column(DateTime, default=datetime.utcnow)
     
-    # ... rest stays the same
     instagram = relationship(
         "InstagramData", back_populates="business", uselist=False, cascade="all, delete-orphan"
     )
@@ -92,6 +89,7 @@ class Analysis(Base):
     estimated_revenue_tier = Column(String(50))
     pricing_strategy = Column(String(50))
     service_quality_score = Column(Float)
+    service_quality_reasoning = Column(Text)
     competitive_assessment = Column(Text)
     niche_specific_insights = Column(Text)
 
@@ -109,6 +107,7 @@ class Analysis(Base):
             "estimated_revenue_tier": self.estimated_revenue_tier,
             "pricing_strategy": self.pricing_strategy,
             "service_quality_score": self.service_quality_score,
+            "service_quality_reasoning": self.service_quality_reasoning,
             "competitive_assessment": self.competitive_assessment,
             "niche_specific_insights": self.niche_specific_insights,
         }
