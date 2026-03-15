@@ -25,6 +25,8 @@ class Business(Base):
     reviews_count = Column(Integer)
     hours = Column(Text)
     scraped_at = Column(DateTime, default=datetime.utcnow)
+    website_grade_score = Column(Float)   # cached total_score from website grader
+    website_grade = Column(Text)          # full website grade as JSON string
     
     instagram = relationship(
         "InstagramData", back_populates="business", uselist=False, cascade="all, delete-orphan"
@@ -34,6 +36,12 @@ class Business(Base):
     )
 
     def to_dict(self):
+        website_grade = None
+        if self.website_grade:
+            try:
+                website_grade = json.loads(self.website_grade)
+            except (json.JSONDecodeError, TypeError):
+                website_grade = None
         return {
             "id": self.id,
             "name": self.name,
@@ -46,6 +54,7 @@ class Business(Base):
             "reviews_count": self.reviews_count,
             "hours": self.hours,
             "scraped_at": self.scraped_at.isoformat() if self.scraped_at else None,
+            "website_grade": website_grade,
             "instagram": self.instagram.to_dict() if self.instagram else None,
             "analysis": self.analysis.to_dict() if self.analysis else None,
         }
@@ -92,6 +101,7 @@ class Analysis(Base):
     service_quality_reasoning = Column(Text)
     competitive_assessment = Column(Text)
     niche_specific_insights = Column(Text)
+    opportunity_score = Column(Float)  # lead-targeting score (0-100)
 
     business = relationship("Business", back_populates="analysis")
 
@@ -110,4 +120,5 @@ class Analysis(Base):
             "service_quality_reasoning": self.service_quality_reasoning,
             "competitive_assessment": self.competitive_assessment,
             "niche_specific_insights": self.niche_specific_insights,
+            "opportunity_score": self.opportunity_score,
         }
