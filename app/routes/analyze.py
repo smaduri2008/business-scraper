@@ -16,6 +16,7 @@ from app.scrapers.google_maps import scrape_google_maps
 from app.scrapers.website import scrape_website
 from app.scrapers.instagram import scrape_instagram
 from app.analyzers.ai_analyzer import analyze_business
+from app.analyzers.lead_ranker import rank_leads, compute_lead_score
 
 logger = logging.getLogger(__name__)
 analyze_bp = Blueprint("analyze", __name__)
@@ -74,6 +75,10 @@ def analyze():
                 logger.error(f"Failed to process business {idx}: {exc}")
                 session.rollback()
         
+        # ── Lead-mode: rank first page by opportunity score ────────────────
+        businesses_output = rank_leads(businesses_output)
+        _update_positions_in_db(session, businesses_output, job_id, start=0)
+
         session.commit()
     finally:
         session.close()
@@ -141,7 +146,32 @@ def migrate_db_columns():
             results.append("position column added")
         else:
             results.append("position already exists")
-        
+
+        # Add website_grade_score if missing
+        if 'website_grade_score' not in columns:
+            session.execute(text('ALTER TABLE businesses ADD COLUMN website_grade_score FLOAT'))
+            session.commit()
+            results.append("website_grade_score column added")
+        else:
+            results.append("website_grade_score already exists")
+
+        # Add website_grade (JSON) if missing
+        if 'website_grade' not in columns:
+            session.execute(text('ALTER TABLE businesses ADD COLUMN website_grade TEXT'))
+            session.commit()
+            results.append("website_grade column added")
+        else:
+            results.append("website_grade already exists")
+
+        # Add opportunity_score to analyses if missing
+        analysis_columns = [col['name'] for col in inspector.get_columns('analyses')]
+        if 'opportunity_score' not in analysis_columns:
+            session.execute(text('ALTER TABLE analyses ADD COLUMN opportunity_score FLOAT'))
+            session.commit()
+            results.append("analyses.opportunity_score column added")
+        else:
+            results.append("analyses.opportunity_score already exists")
+
         session.close()
         return {"status": "success", "message": ", ".join(results), "columns": columns}
     except Exception as e:
@@ -178,11 +208,6 @@ def get_more_results(job_id):
         businesses_output = []
         for business in businesses:
             business_dict = business.to_dict()
-            
-            # Add website grade if exists
-            if hasattr(business, 'website_grade') and business.website_grade:
-                business_dict['website_grade'] = business.website_grade
-            
             businesses_output.append(business_dict)
         
         # Check if there are more results
@@ -277,10 +302,12 @@ def _background_analyze(job_id, niche, location, raw_businesses):
     session = get_session()
     
     try:
+        background_results = []
         for idx, raw in enumerate(raw_businesses, start=10):
             try:
                 business_result = _analyze_single_business(raw, niche, location, job_id, idx, session)
                 session.commit()
+                background_results.append(business_result)
                 
                 # Update job status
                 if job_id in active_jobs:
@@ -291,6 +318,17 @@ def _background_analyze(job_id, niche, location, raw_businesses):
             except Exception as exc:
                 logger.error(f"Error processing business {idx} in job {job_id}: {exc}")
                 session.rollback()
+
+        # ── Lead-mode: rank background batch, then do a full job re-rank ──
+        if background_results:
+            ranked_background = rank_leads(background_results)
+            _update_positions_in_db(session, ranked_background, job_id, start=10)
+            session.commit()
+
+        # Full re-rank: pull ALL businesses for the job from DB, reorder, and
+        # write back positions so that pagination across all pages is lead-ordered.
+        _rerank_job(session, job_id)
+        session.commit()
         
         # Mark job as complete
         if job_id in active_jobs:
@@ -311,6 +349,7 @@ def _save_to_db(session, business_data, ig_data, analysis_data, website_grade, j
     """
     Save business and related data to database.
     """
+    wg_score = website_grade.get("total_score") if website_grade else None
     business = Business(
         job_id=job_id,
         position=position,
@@ -324,6 +363,8 @@ def _save_to_db(session, business_data, ig_data, analysis_data, website_grade, j
         reviews_count=business_data.get("reviews_count"),
         hours=business_data.get("hours"),
         scraped_at=datetime.utcnow(),
+        website_grade_score=wg_score,
+        website_grade=json.dumps(website_grade) if website_grade else None,
     )
     session.add(business)
     session.flush()
@@ -343,6 +384,10 @@ def _save_to_db(session, business_data, ig_data, analysis_data, website_grade, j
         session.add(ig)
     
     if analysis_data:
+        opportunity_score = analysis_data.get("opportunity_score")
+        # Fall back to server-side score if AI didn't produce one
+        if opportunity_score is None:
+            opportunity_score = compute_lead_score(business_data)
         analysis = Analysis(
             business_id=business.id,
             revenue_streams=json.dumps(analysis_data.get("revenue_streams", [])),
@@ -352,5 +397,79 @@ def _save_to_db(session, business_data, ig_data, analysis_data, website_grade, j
             service_quality_reasoning=analysis_data.get("service_quality_reasoning"),
             competitive_assessment=analysis_data.get("competitive_assessment"),
             niche_specific_insights=analysis_data.get("niche_specific_insights"),
+            opportunity_score=opportunity_score,
         )
         session.add(analysis)
+
+def _update_positions_in_db(session, ranked_businesses: list, job_id: str, start: int = 0):
+    """
+    Update the ``position`` column for each business in *ranked_businesses*
+    according to its rank-order index.
+
+    *ranked_businesses* is an in-memory list already sorted by lead score.
+    Each element must contain either ``"id"`` (DB primary key) or ``"name"``
+    to look up the matching row.
+    """
+    for offset, biz in enumerate(ranked_businesses):
+        position = start + offset
+        biz_id = biz.get("id")
+        if biz_id:
+            row = session.query(Business).filter(
+                Business.id == biz_id,
+                Business.job_id == job_id,
+            ).first()
+        else:
+            row = session.query(Business).filter(
+                Business.job_id == job_id,
+                Business.name == biz.get("name", ""),
+            ).first()
+        if row:
+            row.position = position
+
+
+def _rerank_job(session, job_id: str):
+    """
+    Pull every Business for *job_id* from the DB, sort them by
+    opportunity_score (lead-mode ranking), and write back updated
+    ``position`` values so pagination is globally consistent.
+    """
+    businesses = session.query(Business).filter(
+        Business.job_id == job_id
+    ).all()
+
+    if not businesses:
+        return
+
+    # Build dict representation for rank_leads (same shape as in-memory dicts)
+    def _biz_to_dict(b: Business) -> dict:
+        wg = None
+        if b.website_grade:
+            try:
+                wg = json.loads(b.website_grade)
+            except (json.JSONDecodeError, TypeError):
+                wg = None
+        analysis_score = None
+        if b.analysis:
+            analysis_score = b.analysis.opportunity_score
+        return {
+            "id": b.id,
+            "name": b.name,
+            "phone": b.phone,
+            "address": b.address,
+            "website": b.website,
+            "rating": b.rating,
+            "reviews_count": b.reviews_count,
+            "website_grade": wg,
+            "analysis": {"opportunity_score": analysis_score} if analysis_score is not None else {},
+        }
+
+    biz_dicts = [_biz_to_dict(b) for b in businesses]
+    ranked = rank_leads(biz_dicts)
+
+    id_to_row = {b.id: b for b in businesses}
+    for new_position, biz_dict in enumerate(ranked):
+        row = id_to_row.get(biz_dict["id"])
+        if row:
+            row.position = new_position
+
+    logger.info(f"Re-ranked {len(businesses)} businesses for job {job_id}")
