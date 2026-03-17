@@ -70,9 +70,9 @@ def grade_website(website_data):
             },
             {"role": "user", "content": prompt},
         ],
-        "temperature": 0.9,  # HIGH temperature for maximum variety
+        "temperature": 0.25,  # HIGH temperature for maximum variety
         "max_tokens": 2500,
-        "top_p": 0.95,  # Added for more diverse outputs
+        "top_p": 1.0,  # Added for more diverse outputs
     }
     
     try:
