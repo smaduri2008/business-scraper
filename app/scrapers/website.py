@@ -8,6 +8,29 @@ from bs4 import BeautifulSoup
 
 logger = logging.getLogger(__name__)
 
+# Social platform URL patterns for link extraction
+_SOCIAL_PATTERNS = {
+    "instagram": re.compile(r"instagram\.com/(?!p/|reel/|explore/)([A-Za-z0-9_.]+)", re.I),
+    "facebook": re.compile(r"facebook\.com/(?!sharer|share|photo|video|login)([A-Za-z0-9./_-]+)", re.I),
+    "linkedin": re.compile(r"linkedin\.com/(?:company|in)/([A-Za-z0-9._-]+)", re.I),
+    "tiktok": re.compile(r"tiktok\.com/@([A-Za-z0-9_.]+)", re.I),
+    "youtube": re.compile(r"youtube\.com/(?:channel/|c/|@)([A-Za-z0-9_.-]+)", re.I),
+}
+
+# Phone number pattern (North American + international)
+_PHONE_RE = re.compile(
+    r"(?:\+?1[-.\s]?)?(?:\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4})",
+)
+
+# Email pattern
+_EMAIL_RE = re.compile(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}")
+
+# Simple address heuristic: "123 Main St, City, ST 12345"
+_ADDRESS_RE = re.compile(
+    r"\d{1,5}\s+[A-Za-z0-9\s.,#-]{5,60},\s*[A-Za-z\s]{2,30},?\s*[A-Z]{2}\s*\d{5}(?:-\d{4})?",
+    re.I,
+)
+
 
 def scrape_website(url, timeout=10):
     """
@@ -70,6 +93,66 @@ def _parse_website_content(html, url):
     }
     
     return data
+
+
+def extract_brand_info(soup, url):
+    """
+    Extract brand/contact information from a parsed page.
+
+    Returns a dict with:
+      - name: brand name (og:site_name → og:title → <title> → first H1)
+      - phones: list of phone strings
+      - emails: list of email strings
+      - addresses: list of address strings
+      - socials: dict {platform: handle_or_url}
+    """
+    # --- Brand name ----------------------------------------------------------
+    name = ""
+    og_site = soup.find("meta", property="og:site_name")
+    if og_site:
+        name = (og_site.get("content") or "").strip()
+    if not name:
+        og_title = soup.find("meta", property="og:title")
+        if og_title:
+            name = (og_title.get("content") or "").strip()
+    if not name:
+        title_tag = soup.find("title")
+        if title_tag:
+            name = title_tag.get_text(strip=True).split("|")[0].split("–")[0].split("-")[0].strip()
+    if not name:
+        h1 = soup.find("h1")
+        if h1:
+            name = h1.get_text(strip=True)
+
+    # --- Phones & emails -----------------------------------------------------
+    page_text = soup.get_text(" ")
+    phones = list(dict.fromkeys(_PHONE_RE.findall(page_text)))[:5]
+    emails = [
+        e for e in dict.fromkeys(_EMAIL_RE.findall(page_text))
+        if not e.endswith((".png", ".jpg", ".gif", ".svg"))
+    ][:5]
+
+    # --- Addresses -----------------------------------------------------------
+    addresses = list(dict.fromkeys(_ADDRESS_RE.findall(page_text)))[:3]
+
+    # --- Social links --------------------------------------------------------
+    socials = {}
+    for a_tag in soup.find_all("a", href=True):
+        href = a_tag["href"]
+        for platform, pattern in _SOCIAL_PATTERNS.items():
+            if platform not in socials and platform in href:
+                m = pattern.search(href)
+                if m:
+                    socials[platform] = href.split("?")[0]  # strip query params
+                    break
+
+    return {
+        "name": name,
+        "phones": phones,
+        "emails": emails,
+        "addresses": addresses,
+        "socials": socials,
+    }
 
 
 def _extract_meta_title(soup):

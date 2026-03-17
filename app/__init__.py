@@ -30,4 +30,7 @@ def create_app(config_class=Config):
     from app.routes.analyze import analyze_bp
     app.register_blueprint(analyze_bp, url_prefix="/api")
 
+    from app.routes.audit import audit_bp
+    app.register_blueprint(audit_bp, url_prefix="/api")
+
     return app
