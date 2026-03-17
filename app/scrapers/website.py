@@ -19,7 +19,7 @@ _SOCIAL_PATTERNS = {
 
 # Phone number pattern (North American + international)
 _PHONE_RE = re.compile(
-    r"(?:\+?1[-.\s]?)?(?:\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4})",
+    r"(?<!\d)(?:\+?1[-.\s]?)?(?:\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4})(?!\d)",
 )
 
 # Email pattern
@@ -129,7 +129,7 @@ def extract_brand_info(soup, url):
     phones = list(dict.fromkeys(_PHONE_RE.findall(page_text)))[:5]
     emails = [
         e for e in dict.fromkeys(_EMAIL_RE.findall(page_text))
-        if not e.endswith((".png", ".jpg", ".gif", ".svg"))
+        if not e.lower().endswith((".png", ".jpg", ".gif", ".svg"))
     ][:5]
 
     # --- Addresses -----------------------------------------------------------

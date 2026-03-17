@@ -202,7 +202,7 @@ def _extract_brand_from_website_data(website_data: dict, url: str) -> dict:
     phones = list(dict.fromkeys(_PHONE_RE.findall(text_blob)))[:5]
     emails = [
         e for e in dict.fromkeys(_EMAIL_RE.findall(text_blob))
-        if not e.endswith((".png", ".jpg", ".gif", ".svg"))
+        if not e.lower().endswith((".png", ".jpg", ".gif", ".svg"))
     ][:5]
     addresses = list(dict.fromkeys(_ADDRESS_RE.findall(text_blob)))[:3]
 
