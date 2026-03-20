@@ -209,17 +209,28 @@ def _calculate_opportunity_score(business_data, website_grade):
         score -= 20  # Excellent website = nothing to improve
     
     # 2. Business health (good business = can afford you)
-    rating = business_data.get("rating", 0)
-    reviews = business_data.get("reviews_count", 0)
-    
+    ating_raw = business_data.get("rating")
+    reviews_raw = business_data.get("reviews_count")
+
+    # Coerce None/empty to numbers
+    try:
+        rating = float(rating_raw) if rating_raw is not None else 0.0
+    except (TypeError, ValueError):
+        rating = 0.0
+
+    try:
+        reviews = int(reviews_raw) if reviews_raw is not None else 0
+    except (TypeError, ValueError):
+        reviews = 0
+
     if rating >= 4.5 and reviews >= 50:
-        score += 20  # Successful business
+        score += 20
     elif rating >= 4.0 and reviews >= 20:
-        score += 15  # Decent business
+        score += 15
     elif rating >= 3.5 and reviews >= 10:
-        score += 5   # Okay business
+        score += 5
     elif reviews < 5:
-        score -= 15  # Too new or struggling
+        score -= 15
     
     # 3. Digital presence (some foundation = easier sell)
     ig_data = business_data.get("instagram", {})
