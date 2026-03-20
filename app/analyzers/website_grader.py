@@ -52,17 +52,17 @@ def grade_website(website_data):
                     "You are a brutally honest website conversion expert who grades local service business websites. "
                     "You have personally audited over 10,000 websites and know exactly what converts and what doesn't. "
                     "\n\n"
-                    "CRITICAL RULES:\n"
-                    "1. Scores MUST range from 25-92. Never give a score between 55-65 unless truly average.\n"
-                    "2. Most websites are either bad (30-50) or decent (70-85). Very few are perfect (85+).\n"
-                    "3. Missing prices = automatic -15 points from conversion score.\n"
-                    "4. No team photos = automatic -10 points from trust score.\n"
-                    "5. No social proof/testimonials = automatic -12 points.\n"
-                    "6. HTTP only (no SSL) = automatic score below 35 maximum.\n"
-                    "7. Missing mobile viewport = automatic score below 40 maximum.\n"
-                    "8. Every website is DIFFERENT. No two sites should score within 3 points of each other.\n"
-                    "9. Be SPECIFIC about what's good and bad. Generic feedback is worthless.\n"
-                    "10. Your reasoning should reference actual data from the website, not assumptions.\n"
+                    "CRITICAL SCORING RULES:\n"
+                    "1. Final total_score MUST reflect the actual quality of the site. Spread across the full 0-100 range.\n"
+                    "2. Sites with NO SSL must score ≤35. Sites with SSL + mobile viewport start at ≥40.\n"
+                    "3. Every item score MUST cite a specific piece of evidence from the raw data (CTA text, meta title, image counts, schema types, price counts, team names, etc.).\n"
+                    "4. Missing pricing info → A3 and A4 score 0. No team info → B1 scores 0.\n"
+                    "5. Thin content (<500 chars) → C1 and C2 cap at 1.\n"
+                    "6. strengths array MUST have EXACTLY 3 entries. Each must name a concrete data point (e.g. 'SSL enabled', '3 CTAs detected: Call Now, Book, Get Quote', 'LocalBusiness schema present').\n"
+                    "7. weaknesses array MUST have EXACTLY 3 entries. Each must name a concrete gap (e.g. 'No pricing shown – 0 price signals detected', 'Thin content: only 420 chars', 'No schema markup found').\n"
+                    "8. recommendations array MUST have EXACTLY 3 entries. Each must be a specific, actionable fix tied to observed data (e.g. 'Add a visible price range on the homepage – currently 0 prices shown', 'Add LocalBusiness + Service schema – none detected', 'Add team bios/photos – 0 team members detected').\n"
+                    "9. No two sites you grade in the same session should share the same total_score. The spread across all items must produce meaningfully different totals per site.\n"
+                    "10. Forbidden: generic phrases like 'good website', 'needs improvement', 'consider adding'. Always tie feedback to specific counts, labels, or absence of data.\n"
                     "\n"
                     "Think like a customer: Would YOU hire this business based on their website alone?\n"
                     "Always reply with valid JSON only."
@@ -70,9 +70,9 @@ def grade_website(website_data):
             },
             {"role": "user", "content": prompt},
         ],
-        "temperature": 0.25,  # HIGH temperature for maximum variety
-        "max_tokens": 1500,
-        "top_p": 1.0,  # Added for more diverse outputs
+        "temperature": 0.4,  # Moderate variety: wide enough to differentiate sites, low enough for consistent JSON structure
+        "max_tokens": 1800,
+        "top_p": 1.0,
     }
     
     try:
@@ -177,15 +177,26 @@ def _build_grading_prompt(data):
     return f"""
 You are grading a local service business website using a WEBSITE-ONLY rubric.
 You must ONLY score items you can verify from the raw data below.
-If something cannot be verified from the data, score it conservatively (0 or 1) and say what evidence is missing.
+If something cannot be verified, score it 0 and state the missing evidence explicitly.
 
-SCORING:
+SCORING RULES:
 - 20 items, each scored 0/1/2 => total_points 0–40
 - total_score (0–100) = round((total_points / 40) * 100)
+- Score distribution guidelines:
+    • Sites missing SSL OR mobile viewport: total_score must be ≤ 40
+    • Sites with SSL + mobile viewport but missing CTAs + pricing: total_score 41–55
+    • Sites with SSL + mobile + CTAs + pricing but no schema/team: total_score 56–70
+    • Sites covering all major signals (SSL, mobile, CTAs, pricing, team, schema): total_score 71–90
+    • Near-perfect sites with every signal present and strong content: total_score 91–100
+- Each item's "evidence" field MUST quote or cite actual data from the RAW DATA section below
+  (e.g. CTA labels, meta title text, image counts, schema type names, price counts, team names).
+  Generic phrases like "present" or "needs improvement" without data citations are NOT acceptable.
 
 OUTPUT:
 - Return VALID JSON only, matching the required output shape.
-- Include item-level evidence tied to the raw data below (CTA text, meta title, counts, etc.).
+- strengths: exactly 3 items, each citing a specific data signal (e.g. "SSL enabled", "3 CTAs: 'Call Now', 'Book', 'Get Quote'", "LocalBusiness schema detected").
+- weaknesses: exactly 3 items, each citing a specific gap (e.g. "0 prices detected – pricing transparency unknown", "No team members found", "Missing mobile viewport meta tag").
+- recommendations: exactly 3 items, each being a specific, actionable fix referencing observed data (e.g. "Add pricing to homepage – currently 0 price signals", "Implement LocalBusiness + Service schema – none detected", "Add team bios – 0 team members found").
 - Do not mention ad accounts, tracking, bidding, or campaign setup (not website-gradable).
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -225,32 +236,32 @@ RUBRIC (website-only) — total 40 points
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 Section A — Conversion & Offer Clarity (max 12)
-A1. Primary CTA obvious above the fold (0–2)
-A2. Appointment path frictionless (0–2)
-A3. Front-end offer clearly stated (0–2)
-A4. Service pages optimized for conversion intent (0–2)
-A5. Objection handling present (0–2)
-A6. Message consistency across site (0–2)
+A1. Primary CTA obvious above the fold: 2=CTA label present in data, 1=CTA exists but label generic, 0=no CTAs detected (0/1/2)
+A2. Appointment/contact path frictionless: 2=phone+CTA present, 1=only one contact method, 0=neither (0/1/2)
+A3. Front-end offer/pricing clearly stated: 2=prices detected, 1=services listed but no prices, 0=neither (0/1/2)
+A4. Service pages optimized for conversion: 2=≥5 services listed with pricing, 1=services listed no pricing, 0=no services (0/1/2)
+A5. Objection handling/FAQs present: 2=strong evidence in content, 1=weak signals, 0=not found (0/1/2)
+A6. Message consistency (meta title ↔ H1 ↔ services): 2=title+H1+services aligned, 1=partial, 0=missing or mismatched (0/1/2)
 
 Section B — Trust & Authority (max 10)
-B1. Provider credibility visible (0–2)
-B2. Reviews/testimonials present and credible (0–2)
-B3. Results proof (before/after/outcomes) where appropriate (0–2)
-B4. Risk reducers/transparency (0–2)
-B5. Policies/compliance basics (0–2)
+B1. Provider credibility visible: 2=team members named in data, 1=business name only, 0=no team info (0/1/2)
+B2. Reviews/testimonials present: 2=testimonial signals in content, 1=rating mention only, 0=none (0/1/2)
+B3. Results proof (before/after/outcomes): 2=explicit evidence, 1=implied, 0=none (0/1/2)
+B4. Risk reducers/transparency (guarantees, policies): 2=clear signals, 1=implied, 0=none (0/1/2)
+B5. Policies/compliance basics: 2=present in links, 1=implied, 0=not found (0/1/2)
 
 Section C — Local SEO & Content Structure (max 10)
-C1. Topical + location targeting exists (0–2)
-C2. Dedicated service pages exist for core services (0–2)
-C3. Internal linking between services is intentional (0–2)
-C4. Schema markup present and relevant (0–2)
-C5. NAP consistency + contact clarity (0–2)
+C1. Topical + location targeting: 2=local intent keywords detected, 1=location implied, 0=none (0/1/2)
+C2. Dedicated service pages for core services: 2=≥3 services + links, 1=services listed, 0=none (0/1/2)
+C3. Internal linking intentional: 2=≥10 links, 1=some links, 0=0-2 links (0/1/2)
+C4. Schema markup relevant: 2=LocalBusiness/Service schema, 1=any schema, 0=none (0/1/2)
+C5. NAP consistency + contact clarity: 2=phone+address in data, 1=one only, 0=neither (0/1/2)
 
 Section D — Technical & UX Fundamentals (max 8)
-D1. Mobile readiness (0–2)
-D2. Page-speed hygiene (0–2)
-D3. Accessibility basics (0–2)
-D4. Contactability everywhere (0–2)
+D1. Mobile readiness: 2=mobile viewport present, 0=missing (0/2)
+D2. SSL/HTTPS: 2=HTTPS, 0=HTTP only (0/2)
+D3. Accessibility basics (alt text): 2=≥80% images have alt, 1=some alt text, 0=none (0/1/2)
+D4. Content depth: 2=≥1000 chars, 1=500-999 chars, 0=<500 chars (0/1/2)
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 REQUIRED OUTPUT JSON SHAPE (JSON ONLY)
@@ -264,16 +275,28 @@ REQUIRED OUTPUT JSON SHAPE (JSON ONLY)
     "conversion_offer_clarity": {{
       "score": 0, "max": 12,
       "items": [
-        {{"id":"A1","label":"Primary CTA obvious above the fold","score":0,"max":2,"evidence":"..."}}
+        {{"id":"A1","label":"Primary CTA obvious above the fold","score":0,"max":2,"evidence":"Cite exact CTA labels or 'No CTAs detected'"}}
       ]
     }},
     "trust_authority": {{ "score": 0, "max": 10, "items": [] }},
     "local_seo_structure": {{ "score": 0, "max": 10, "items": [] }},
     "technical_ux": {{ "score": 0, "max": 8, "items": [] }}
   }},
-  "strengths": ["..."],
-  "weaknesses": ["..."],
-  "recommendations": ["..."]
+  "strengths": [
+    "Specific strength 1 citing data signal",
+    "Specific strength 2 citing data signal",
+    "Specific strength 3 citing data signal"
+  ],
+  "weaknesses": [
+    "Specific weakness 1 citing data gap",
+    "Specific weakness 2 citing data gap",
+    "Specific weakness 3 citing data gap"
+  ],
+  "recommendations": [
+    "Specific fix 1 referencing observed data",
+    "Specific fix 2 referencing observed data",
+    "Specific fix 3 referencing observed data"
+  ]
 }}
 
 Now grade the website strictly using only the raw data. Output JSON only.

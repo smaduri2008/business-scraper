@@ -41,15 +41,30 @@ def analyze_business(business_data, niche):
                 "content": (
                     "You are an expert business analyst specializing in local service businesses. "
                     "Analyze each business individually and provide varied, specific assessments. "
-                    "Service quality scores should range from 3.0 to 9.5 based on actual indicators. "
-                    "Provide detailed reasoning for your scores. "
+                    "\n\n"
+                    "SERVICE QUALITY SCORE BANDS (3.0–9.5 — use the full range):\n"
+                    "  3.0–4.4 → Poor: rating <3.5 OR fewer than 5 reviews AND no pricing AND no team info\n"
+                    "  4.5–5.9 → Below average: rating 3.5–3.9, few reviews, sparse info\n"
+                    "  6.0–7.0 → Average: rating 4.0–4.2, 10–49 reviews, some info shown\n"
+                    "  7.1–8.0 → Good: rating 4.3–4.6, 50–199 reviews, pricing or team visible\n"
+                    "  8.1–9.0 → Very good: rating 4.7–4.8, 200+ reviews, pricing AND team visible\n"
+                    "  9.1–9.5 → Excellent: rating 4.9–5.0, 500+ reviews, full info + strong social\n"
+                    "\n"
+                    "SCORING RULES:\n"
+                    "1. Assign service_quality_score strictly from the band that matches the business's actual data.\n"
+                    "2. NEVER default to 7.5 or 8.0. Pick the score that honestly reflects the evidence.\n"
+                    "3. service_quality_reasoning MUST cite the specific rating, review count, pricing status, team size, and social presence.\n"
+                    "4. competitive_assessment MUST name at least one specific competitive advantage or disadvantage visible in the data.\n"
+                    "5. niche_specific_insights MUST name the niche and reference a concrete revenue or market signal.\n"
+                    "6. revenue_streams MUST list 3 specific streams plausible for this business's services and pricing.\n"
+                    "7. pricing_strategy MUST be one of: Budget / Mid-tier / Premium / Luxury — justified by actual price signals.\n"
                     "Always reply with a valid JSON object and nothing else."
                 ),
             },
             {"role": "user", "content": prompt},
         ],
-        "temperature": 0.8,  # INCREASED from 0.3 for more variety
-        "max_tokens": 1500,  # INCREASED from 1024 for detailed reasoning
+        "temperature": 0.8,
+        "max_tokens": 1500,
     }
 
     try:
@@ -98,51 +113,72 @@ def _build_prompt(data, niche):
         prices = ", ".join([str(p) for p in price_list[:10]]) or "unknown"
     else:
         prices = "unknown"
+
+    has_pricing = prices != "unknown"
     
     # Handle team members
-    team = ", ".join(data.get("team_members", [])[:10]) or "unknown"
+    team_members = data.get("team_members", [])
+    team = ", ".join(team_members[:10]) or "unknown"
+    team_count = len(team_members)
 
     ig = data.get("instagram") or {}
+    ig_followers = ig.get("followers", 0) or 0
+    ig_engagement = ig.get("engagement_rate", 0) or 0
     ig_summary = (
         f"Instagram: @{ig.get('username')} | "
-        f"{ig.get('followers', 0):,} followers | "
-        f"{ig.get('engagement_rate', 0):.1f}% engagement"
+        f"{ig_followers:,} followers | "
+        f"{ig_engagement:.1f}% engagement"
         if ig.get("username")
         else "No Instagram found"
     )
+
+    rating = data.get("rating", "N/A")
+    reviews_count = data.get("reviews_count", 0) or 0
+
+    # Derive band hint for the model
+    try:
+        r = float(rating)
+    except (TypeError, ValueError):
+        r = 0.0
+    if r < 3.5 or reviews_count < 5:
+        band_hint = "3.0–4.4 (Poor)"
+    elif r < 4.0:
+        band_hint = "4.5–5.9 (Below average)"
+    elif r < 4.3:
+        band_hint = "6.0–7.0 (Average)"
+    elif r < 4.7:
+        band_hint = "7.1–8.0 (Good)"
+    elif r < 4.9:
+        band_hint = "8.1–9.0 (Very good)"
+    else:
+        band_hint = "9.1–9.5 (Excellent)"
 
     return f"""Analyze this {niche} business SPECIFICALLY and INDIVIDUALLY. DO NOT give generic scores.
 
 Business: {data.get('name', 'Unknown')}
 Location: {data.get('location', 'Unknown')}
-Rating: {data.get('rating', 'N/A')} ({data.get('reviews_count', 0)} reviews)
+Rating: {rating} ({reviews_count} reviews)
 Website: {data.get('website', 'None')}
-Services: {services}
-Prices: {prices}
-Team: {team}
+Services ({len(data.get('services', []))}): {services}
+Pricing transparency: {"YES – prices detected: " + prices if has_pricing else "NO – no pricing shown"}
+Team ({team_count} members): {team}
 Social: {ig_summary}
 
-CRITICAL INSTRUCTIONS:
-1. Service quality score should range from 3.0 to 9.5 based on actual indicators
-2. Consider: rating ({data.get('rating')}), review count ({data.get('reviews_count')}), team size, services offered, pricing shown, social presence
-3. Provide SPECIFIC reasoning referencing this business's data
-4. DO NOT default to scores like 7.5 or 8.0 for every business
-5. Low-quality indicators (low rating, no team, no prices) = 3.0-5.5
-6. Average indicators (decent rating, some info) = 6.0-7.5
-7. High-quality indicators (high rating, many reviews, full info) = 7.6-9.5
+SCORE BAND for this business: {band_hint}
+(Justify any deviation from this band in service_quality_reasoning)
 
 Required JSON structure:
 {{
-  "revenue_streams": ["specific stream 1", "specific stream 2", "specific stream 3"],
+  "revenue_streams": ["specific stream 1 for {niche}", "specific stream 2 for {niche}", "specific stream 3 for {niche}"],
   "estimated_revenue_tier": "Low|Medium|High",
   "pricing_strategy": "Budget|Mid-tier|Premium|Luxury",
-  "service_quality_score": 7.5,
-  "service_quality_reasoning": "Detailed explanation: This business has a {data.get('rating')} rating with {data.get('reviews_count')} reviews. {'Team of ' + str(len(data.get('team_members', []))) + ' shown' if data.get('team_members') else 'No team information'}. {'Pricing shown' if prices != 'unknown' else 'No pricing transparency'}. Social presence: {ig_summary}. Based on these factors...",
-  "competitive_assessment": "Specific 2-3 sentence assessment referencing this business's actual data",
-  "niche_specific_insights": "Specific 2-3 sentence insight about THIS business in the {niche} niche"
+  "service_quality_score": 0.0,
+  "service_quality_reasoning": "This {niche} business has a {rating} rating with {reviews_count} reviews. Team: {team_count} members {'(' + team + ')' if team != 'unknown' else '(none shown)'}. Pricing: {'shown (' + prices + ')' if has_pricing else 'not shown'}. Social: {ig_summary}. Based on these indicators, the score falls in the {band_hint} band because...",
+  "competitive_assessment": "2-3 sentences naming at least one specific competitive advantage or disadvantage visible in this business's actual data",
+  "niche_specific_insights": "2-3 sentences about THIS {niche} business referencing a concrete revenue or market signal from the data above"
 }}
 
-BE SPECIFIC. VARY YOUR SCORES. REFERENCE ACTUAL DATA."""
+BE SPECIFIC. USE THE BAND. REFERENCE ACTUAL DATA."""
 
 
 def _parse_analysis(content):
@@ -232,14 +268,30 @@ def _calculate_opportunity_score(business_data, website_grade):
     elif reviews < 5:
         score -= 15
     
-    # 3. Digital presence (some foundation = easier sell)
-    ig_data = business_data.get("instagram", {})
-    if ig_data and ig_data.get("followers", 0) > 1000:
-        score += 10  # Has audience, understands digital
-    elif ig_data and ig_data.get("followers", 0) > 500:
-        score += 5
+    # 3. Digital presence – social followers signal brand awareness
+    ig_data = business_data.get("instagram") or {}
+    ig_followers = ig_data.get("followers", 0) or 0
+    ig_engagement = ig_data.get("engagement_rate", 0) or 0
+    if ig_followers > 5000:
+        score += 12  # Large audience already → strong digital intent
+    elif ig_followers > 1000:
+        score += 8
+    elif ig_followers > 500:
+        score += 4
+
+    # Engagement rate bonus (active audience is a valuable upsell signal)
+    if ig_engagement >= 4.0:
+        score += 6   # High engagement → audience responsive to content
+    elif ig_engagement >= 2.0:
+        score += 3
+
+    # 4. Price transparency (no pricing = clear improvement we can sell)
+    price_list = business_data.get("prices", [])
+    has_pricing = bool(price_list)
+    if not has_pricing:
+        score += 8   # No pricing shown = explicit gap we can improve
     
-    # 4. Service business indicators (has team = has budget)
+    # 5. Service business indicators (has team = has budget)
     team_count = len(business_data.get("team_members", []))
     services_count = len(business_data.get("services", []))
     
@@ -251,7 +303,7 @@ def _calculate_opportunity_score(business_data, website_grade):
     if services_count >= 5:
         score += 5  # Diverse services = more revenue
     
-    # 5. Website exists but needs work (ideal scenario)
+    # 6. Website exists but needs work (ideal scenario)
     has_website = bool(business_data.get("website"))
     if has_website and 30 < website_score < 60:
         score += 15  # PERFECT - has website but it's bad
