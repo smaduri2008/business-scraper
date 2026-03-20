@@ -209,7 +209,7 @@ def _calculate_opportunity_score(business_data, website_grade):
         score -= 20  # Excellent website = nothing to improve
     
     # 2. Business health (good business = can afford you)
-    ating_raw = business_data.get("rating")
+    rating_raw = business_data.get("rating")
     reviews_raw = business_data.get("reviews_count")
 
     # Coerce None/empty to numbers
