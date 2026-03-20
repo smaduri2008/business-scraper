@@ -71,7 +71,7 @@ def grade_website(website_data):
             {"role": "user", "content": prompt},
         ],
         "temperature": 0.25,  # HIGH temperature for maximum variety
-        "max_tokens": 2500,
+        "max_tokens": 1500,
         "top_p": 1.0,  # Added for more diverse outputs
     }
     
@@ -96,271 +96,241 @@ def grade_website(website_data):
 
 
 def _build_grading_prompt(data):
-    """Build grading prompt from website data."""
-    
-    url = data.get("url", "Unknown")
-    has_ssl = "https://" in url.lower()
-    
-    # Extract technical details
-    meta_title = data.get("meta_title", "Missing")
-    meta_desc = data.get("meta_description", "Missing")
-    h1_tags = data.get("h1_tags", [])
-    images_count = len(data.get("images", []))
-    images_with_alt = len([img for img in data.get("images", []) if img.get("alt")])
-    links_count = len(data.get("links", []))
-    has_mobile_viewport = data.get("has_mobile_viewport", False)
-    cta_buttons = data.get("cta_buttons", [])
-    services = data.get("services", [])
-    prices = data.get("prices", [])
-    team_members = data.get("team_members", [])
-    text_length = data.get("text_length", 0)
-    
-    # Calculate some quality indicators
-    alt_text_percentage = int(images_with_alt/max(images_count,1)*100) if images_count > 0 else 0
-    has_adequate_content = text_length >= 500
+    """
+    Website-only grading prompt using a 20-item rubric (0/1/2 each) => 0–40 points,
+    scaled to 0–100 for total_score.
+    """
+
+    def _safe_str(x, default=""):
+        return default if x is None else str(x)
+
+    url = (_safe_str(data.get("url"), "Unknown") or "Unknown").strip()
+    has_ssl = url.lower().startswith("https://")
+
+    meta_title = _safe_str(data.get("meta_title"), "Missing")
+    meta_desc = _safe_str(data.get("meta_description"), "Missing")
+
+    h1_tags = data.get("h1_tags") or []
+    links = data.get("links") or []
+    images = data.get("images") or []
+    cta_buttons = data.get("cta_buttons") or []
+    services = data.get("services") or []
+    prices = data.get("prices") or []
+    team_members = data.get("team_members") or []
+    text_length = int(data.get("text_length") or 0)
+    has_mobile_viewport = bool(data.get("has_mobile_viewport") or False)
+
+    images_count = len(images)
+    images_with_alt = len([img for img in images if isinstance(img, dict) and img.get("alt")])
+    alt_text_percentage = int(images_with_alt / max(images_count, 1) * 100) if images_count else 0
+
+    # Optional fields (safe if not present)
+    schema_types = data.get("schema_types") or []
+    if isinstance(schema_types, str):
+        schema_types = [schema_types]
+    has_schema = bool(schema_types)
+
+    # Heuristics / signals
+    has_ctas = len(cta_buttons) > 0
     has_pricing = len(prices) > 0
     has_team = len(team_members) > 0
-    has_services = len(services) >= 3
-    
-    # Build critical assessment
+    has_adequate_content = text_length >= 500
+
+    # If you have raw_text in website_data, it helps a lot. Otherwise keep it blank.
+    raw_text = data.get("raw_text") if isinstance(data.get("raw_text"), str) else ""
+    combined_text = " ".join([
+        meta_title or "",
+        meta_desc or "",
+        " ".join([_safe_str(h) for h in h1_tags[:3]]),
+        " ".join([_safe_str(s) for s in services[:10]]),
+        raw_text[:1500],
+    ]).lower()
+
+    # This is a weak signal, but better than nothing without explicit city parsing.
+    local_intent_keywords = ["near me", "located", "serving", "in "]
+    has_local_intent = any(k in combined_text for k in local_intent_keywords)
+
     critical_issues = []
     if not has_ssl:
-        critical_issues.append("❌ NO SSL CERTIFICATE - Major trust and security issue")
+        critical_issues.append("❌ No SSL (HTTP only)")
     if not has_mobile_viewport:
-        critical_issues.append("❌ NOT MOBILE RESPONSIVE - Loses 60% of potential customers")
-    if not has_pricing:
-        critical_issues.append("⚠️ NO PRICING - Major conversion barrier")
-    if not has_team:
-        critical_issues.append("⚠️ NO TEAM PHOTOS - Missing trust signals")
-    if len(cta_buttons) == 0:
-        critical_issues.append("❌ NO CLEAR CALL-TO-ACTION - How do customers book?")
-    if not has_services:
-        critical_issues.append("⚠️ SERVICES UNCLEAR - Fewer than 3 services identified")
+        critical_issues.append("❌ Missing mobile viewport meta")
+    if not has_ctas:
+        critical_issues.append("⚠️ No CTA buttons detected")
     if text_length < 300:
-        critical_issues.append("⚠️ THIN CONTENT - Looks unprofessional and hurts SEO")
-    
+        critical_issues.append("⚠️ Thin content (<300 chars)")
+
     positive_signals = []
     if has_ssl:
-        positive_signals.append("✅ SSL Certificate")
+        positive_signals.append("✅ HTTPS enabled")
     if has_mobile_viewport:
-        positive_signals.append("✅ Mobile Responsive")
+        positive_signals.append("✅ Mobile viewport present")
+    if has_ctas:
+        positive_signals.append(f"✅ CTAs detected ({len(cta_buttons)})")
     if has_pricing:
-        positive_signals.append(f"✅ Pricing Shown ({len(prices)} items)")
+        positive_signals.append(f"✅ Pricing cues detected ({len(prices)} items)")
     if has_team:
-        positive_signals.append(f"✅ Team Displayed ({len(team_members)} members)")
-    if len(cta_buttons) >= 3:
-        positive_signals.append(f"✅ Multiple CTAs ({len(cta_buttons)} found)")
-    if has_adequate_content:
-        positive_signals.append(f"✅ Good Content Volume ({text_length} chars)")
-    if alt_text_percentage >= 70:
-        positive_signals.append(f"✅ Good Image Optimization ({alt_text_percentage}% with alt text)")
-    
-    return f"""You are auditing this local service business website. Grade it out of 100 points.
+        positive_signals.append(f"✅ Team/provider cues detected ({len(team_members)} entries)")
+    if has_schema:
+        positive_signals.append(f"✅ Schema detected ({', '.join([_safe_str(t) for t in schema_types[:5]])})")
+
+    return f"""
+You are grading a local service business website using a WEBSITE-ONLY rubric.
+You must ONLY score items you can verify from the raw data below.
+If something cannot be verified from the data, score it conservatively (0 or 1) and say what evidence is missing.
+
+SCORING:
+- 20 items, each scored 0/1/2 => total_points 0–40
+- total_score (0–100) = round((total_points / 40) * 100)
+
+OUTPUT:
+- Return VALID JSON only, matching the required output shape.
+- Include item-level evidence tied to the raw data below (CTA text, meta title, counts, etc.).
+- Do not mention ad accounts, tracking, bidding, or campaign setup (not website-gradable).
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-WEBSITE: {url}
+WEBSITE
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+URL: {url}
 
-🔴 CRITICAL ISSUES DETECTED:
-{chr(10).join(critical_issues) if critical_issues else "None - Good baseline!"}
+CRITICAL ISSUES (detected):
+{chr(10).join(critical_issues) if critical_issues else "None detected"}
 
-✅ POSITIVE SIGNALS:
-{chr(10).join(positive_signals) if positive_signals else "Very few positive signals detected"}
+POSITIVE SIGNALS (detected):
+{chr(10).join(positive_signals) if positive_signals else "None detected"}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-RAW DATA FOR YOUR ANALYSIS:
+RAW DATA (facts you must use)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
 TECHNICAL:
-• SSL: {"✅ Yes" if has_ssl else "❌ NO"}
-• Mobile Viewport: {"✅ Yes" if has_mobile_viewport else "❌ NO"}
-• Meta Title: "{meta_title}"
-• Meta Description: {"✅ Present" if meta_desc != "Missing" else "❌ Missing"}
-• H1 Tags: {len(h1_tags)} found → {', '.join([f'"{h1}"' for h1 in h1_tags[:2]]) if h1_tags else 'None'}
-• Images: {images_count} total, {images_with_alt} with alt text ({alt_text_percentage}%)
-• Internal Links: {links_count}
+- SSL (https): {"Yes" if has_ssl else "No"}
+- Mobile viewport: {"Yes" if has_mobile_viewport else "No"}
+- Meta title: "{meta_title}"
+- Meta description: {"Present" if meta_desc != "Missing" and meta_desc.strip() else "Missing"}
+- H1 tags count: {len(h1_tags)} (sample: {", ".join([f'"{_safe_str(h)}"' for h in h1_tags[:2]]) if h1_tags else "None"})
+- Images: {images_count} (with alt: {images_with_alt}, {alt_text_percentage}%)
+- Links count: {len(links)}
 
-CONVERSION ELEMENTS:
-• CTAs: {len(cta_buttons)} buttons → {', '.join([f'"{cta}"' for cta in cta_buttons[:4]]) if cta_buttons else 'None found'}
-• Services Listed: {len(services)} → {', '.join([f'"{s}"' for s in services[:5]]) if services else 'None clearly identified'}
-• Pricing: {"✅ " + str(len(prices)) + " prices shown" if has_pricing else "❌ No prices displayed"}
-• Team: {"✅ " + str(len(team_members)) + " members shown" if has_team else "❌ No team information"}
-• Content Volume: {text_length} characters {"✅ (adequate)" if has_adequate_content else "❌ (too thin)"}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-YOUR SCORING FRAMEWORK (100 points):
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-PART 1: WEBSITE QUALITY (50 points max)
-
-1. Conversion Optimization (15 pts)
-   • Clear value proposition visible immediately: 0-3 pts
-   • Multiple clear CTAs (book, call, contact): 0-3 pts
-   • Contact info prominent and easy to find: 0-3 pts
-   • Pricing transparency or "free consultation": 0-3 pts
-   • Social proof (testimonials, reviews, before/after): 0-3 pts
-   
-   PENALTY: -15 pts if no pricing AND no "free consultation" offer
-   PENALTY: -10 pts if no CTAs above the fold
-
-2. User Experience (15 pts)
-   • Mobile responsive design: 0-5 pts
-   • Fast loading indicators (reasonable images): 0-4 pts
-   • Clean, professional aesthetics: 0-3 pts
-   • Easy navigation structure: 0-3 pts
-   
-   PENALTY: -15 pts if not mobile responsive
-   PENALTY: -5 pts if more than 50 images (slow loading)
-
-3. Content Quality (10 pts)
-   • Services clearly and specifically described: 0-3 pts
-   • Adequate text content (500+ chars): 0-2 pts
-   • Team/provider info builds trust: 0-3 pts
-   • Educational or helpful content: 0-2 pts
-   
-   PENALTY: -8 pts if less than 300 characters of content
-
-4. Technical SEO (10 pts)
-   • HTTPS/SSL enabled: 0-3 pts (CRITICAL)
-   • Meta title descriptive: 0-2 pts
-   • Meta description present: 0-2 pts
-   • Proper H1 usage (1-2 H1s): 0-2 pts
-   • Image alt text (50%+ coverage): 0-1 pt
-   
-   PENALTY: Maximum score of 35 total if no SSL
-
-PART 2: DIGITAL PRESENCE (50 points max)
-
-5. Local SEO (12 pts)
-   • Location in meta title: 0-4 pts
-   • Service + location keywords in content: 0-4 pts
-   • Local area targeting evident: 0-4 pts
-
-6. Trust & Credibility (15 pts)
-   • Team photos/provider visible: 0-5 pts
-   • Credentials or certifications: 0-5 pts
-   • Real business address/location: 0-3 pts
-   • Trust badges or associations: 0-2 pts
-   
-   PENALTY: -10 pts if no team shown
-
-7. Lead Generation (13 pts)
-   • Multiple contact methods: 0-4 pts
-   • Booking/scheduling system: 0-5 pts
-   • Lead magnets or free offers: 0-4 pts
-
-8. Engagement (10 pts)
-   • Social media links: 0-2 pts
-   • Email signup option: 0-2 pts
-   • Blog or resources section: 0-3 pts
-   • Portfolio or before/after gallery: 0-3 pts
+CONVERSION / CONTENT SIGNALS:
+- CTA buttons ({len(cta_buttons)}): {", ".join([f'"{_safe_str(c)}"' for c in cta_buttons[:6]]) if cta_buttons else "None"}
+- Services extracted ({len(services)}): {", ".join([f'"{_safe_str(s)}"' for s in services[:8]]) if services else "None"}
+- Pricing extracted ({len(prices)}): {"Present" if has_pricing else "Not detected"}
+- Team/provider extracted ({len(team_members)}): {"Present" if has_team else "Not detected"}
+- Content length: {text_length} characters
+- Schema types: {", ".join([_safe_str(t) for t in schema_types[:6]]) if schema_types else "None detected"}
+- Local intent heuristic: {"Yes" if has_local_intent else "No/unclear"}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-GRADING INSTRUCTIONS:
+RUBRIC (website-only) — total 40 points
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-1. Start with the raw data above
-2. Apply the scoring framework strictly
-3. Apply ALL relevant penalties
-4. Be brutally honest - most websites are mediocre (45-65 range)
-5. Only give 75+ to websites that are genuinely well-optimized
-6. Give under 40 to websites with critical issues (no SSL, not mobile, no CTAs)
-7. Your reasoning MUST cite specific data points from above
-8. Make each grade unique - no two websites should score the same
+Section A — Conversion & Offer Clarity (max 12)
+A1. Primary CTA obvious above the fold (0–2)
+A2. Appointment path frictionless (0–2)
+A3. Front-end offer clearly stated (0–2)
+A4. Service pages optimized for conversion intent (0–2)
+A5. Objection handling present (0–2)
+A6. Message consistency across site (0–2)
 
-REQUIRED OUTPUT FORMAT (JSON only):
+Section B — Trust & Authority (max 10)
+B1. Provider credibility visible (0–2)
+B2. Reviews/testimonials present and credible (0–2)
+B3. Results proof (before/after/outcomes) where appropriate (0–2)
+B4. Risk reducers/transparency (0–2)
+B5. Policies/compliance basics (0–2)
+
+Section C — Local SEO & Content Structure (max 10)
+C1. Topical + location targeting exists (0–2)
+C2. Dedicated service pages exist for core services (0–2)
+C3. Internal linking between services is intentional (0–2)
+C4. Schema markup present and relevant (0–2)
+C5. NAP consistency + contact clarity (0–2)
+
+Section D — Technical & UX Fundamentals (max 8)
+D1. Mobile readiness (0–2)
+D2. Page-speed hygiene (0–2)
+D3. Accessibility basics (0–2)
+D4. Contactability everywhere (0–2)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+REQUIRED OUTPUT JSON SHAPE (JSON ONLY)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 {{
-  "total_score": 47,
-  "website_quality_score": 22,
-  "digital_presence_score": 25,
-  "strengths": [
-    "Specific strength #1 with data reference",
-    "Specific strength #2 with numbers",
-    "Specific strength #3"
-  ],
-  "weaknesses": [
-    "Critical weakness #1 - explain impact",
-    "Major weakness #2 - be specific",
-    "Weakness #3 with recommendation"
-  ],
-  "recommendations": [
-    "Actionable fix #1 with specific instruction",
-    "Priority fix #2 with expected impact",
-    "Quick win #3"
-  ],
-  "detailed_breakdown": {{
-    "conversion_optimization": {{
-      "score": 6,
-      "reasoning": "Found {len(cta_buttons)} CTAs but NO PRICING displayed (-15 pt penalty). {len(services)} services listed but descriptions are vague. No social proof visible."
+  "total_points": 0,
+  "max_points": 40,
+  "total_score": 0,
+  "sections": {{
+    "conversion_offer_clarity": {{
+      "score": 0, "max": 12,
+      "items": [
+        {{"id":"A1","label":"Primary CTA obvious above the fold","score":0,"max":2,"evidence":"..."}}
+      ]
     }},
-    "user_experience": {{
-      "score": 8,
-      "reasoning": "Mobile viewport present (+5) but {images_count} images may slow loading. Navigation appears {'clear' if links_count > 10 else 'limited'}."
-    }},
-    "content_quality": {{
-      "score": 4,
-      "reasoning": "Only {text_length} characters of content - WAY too thin (-8 pts). {'Team shown is good (+3)' if has_team else 'No team info hurts trust'}. Services: {len(services)}."
-    }},
-    "technical_seo": {{
-      "score": 4,
-      "reasoning": "{'SSL enabled (+3)' if has_ssl else 'NO SSL - CRITICAL ISSUE (max score 35)'}. Meta: '{meta_title[:40]}...' Images: {alt_text_percentage}% have alt text."
-    }},
-    "local_seo": {{
-      "score": 7,
-      "reasoning": "Analyze if '{url}' and services target local area. Check if city/neighborhood appears in content."
-    }},
-    "trust_credibility": {{
-      "score": 5,
-      "reasoning": "{'Shows ' + str(len(team_members)) + ' team members (+5)' if has_team else 'NO team photos visible - major trust issue (-10)'}.  Check for certifications."
-    }},
-    "lead_generation": {{
-      "score": 6,
-      "reasoning": "{len(cta_buttons)} CTAs found. Evaluate if booking system present, if lead magnets offered, if multiple contact methods exist."
-    }},
-    "engagement": {{
-      "score": 5,
-      "reasoning": "Assess social links, email signup, blog presence, portfolio. Most service sites lack engagement features."
-    }}
-  }}
+    "trust_authority": {{ "score": 0, "max": 10, "items": [] }},
+    "local_seo_structure": {{ "score": 0, "max": 10, "items": [] }},
+    "technical_ux": {{ "score": 0, "max": 8, "items": [] }}
+  }},
+  "strengths": ["..."],
+  "weaknesses": ["..."],
+  "recommendations": ["..."]
 }}
 
-Grade this website NOW. Be harsh but fair. Reference the actual data above."""
+Now grade the website strictly using only the raw data. Output JSON only.
+""".strip()
 
 
 def _parse_grade(content):
-    """Parse and validate grade response from AI."""
-    # Strip markdown code fences if present
+    """Parse and validate grade response from AI. Supports new rubric schema and old schema."""
     content = content.strip()
     if content.startswith("```"):
         lines = content.splitlines()
-        content = "\n".join(
-            line for line in lines if not line.startswith("```")
-        ).strip()
-    
+        content = "\n".join(line for line in lines if not line.startswith("```")).strip()
+
     data = json.loads(content)
-    
-    # Parse detailed breakdown with reasoning
+
+    # New rubric schema
+    if "sections" in data and "total_points" in data:
+        total_points = int(data.get("total_points") or 0)
+        max_points = int(data.get("max_points") or 40)
+        total_score = data.get("total_score")
+
+        if total_score is None and max_points > 0:
+            total_score = round((total_points / max_points) * 100)
+
+        return {
+            "total_score": int(max(0, min(100, int(total_score or 0)))),
+            # Keep legacy keys for existing UI/backcompat
+            "website_quality_score": 0,
+            "digital_presence_score": 0,
+            "strengths": data.get("strengths", []) or [],
+            "weaknesses": data.get("weaknesses", []) or [],
+            "recommendations": data.get("recommendations", []) or [],
+            "detailed_breakdown": {
+                "rubric_v2": {
+                    "total_points": total_points,
+                    "max_points": max_points,
+                    "sections": data.get("sections") or {},
+                }
+            },
+        }
+
+    # Old schema fallback
     detailed_breakdown = {}
-    raw_breakdown = data.get("detailed_breakdown", {})
-    
+    raw_breakdown = data.get("detailed_breakdown", {}) or {}
     for key, value in raw_breakdown.items():
         if isinstance(value, dict):
             detailed_breakdown[key] = value
         else:
-            # Backwards compatible - if just a number
-            detailed_breakdown[key] = {
-                "score": int(value),
-                "reasoning": ""
-            }
-    
+            detailed_breakdown[key] = {"score": int(value), "reasoning": ""}
+
     return {
-        "total_score": int(data.get("total_score", 0)),
-        "website_quality_score": int(data.get("website_quality_score", 0)),
-        "digital_presence_score": int(data.get("digital_presence_score", 0)),
-        "strengths": data.get("strengths", []),
-        "weaknesses": data.get("weaknesses", []),
-        "recommendations": data.get("recommendations", []),
+        "total_score": int(data.get("total_score", 0) or 0),
+        "website_quality_score": int(data.get("website_quality_score", 0) or 0),
+        "digital_presence_score": int(data.get("digital_presence_score", 0) or 0),
+        "strengths": data.get("strengths", []) or [],
+        "weaknesses": data.get("weaknesses", []) or [],
+        "recommendations": data.get("recommendations", []) or [],
         "detailed_breakdown": detailed_breakdown,
     }
 
@@ -374,5 +344,11 @@ def _empty_grade():
         "strengths": [],
         "weaknesses": [],
         "recommendations": [],
-        "detailed_breakdown": {},
+        "detailed_breakdown": {
+            "rubric_v2": {
+                "total_points": 0,
+                "max_points": 40,
+                "sections": {},
+            }
+        },
     }
