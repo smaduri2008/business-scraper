@@ -104,6 +104,21 @@ def rank_leads(businesses: list) -> list:
         else:
             bucket = 2
 
-        return bucket, -score  # ascending tuple → best lead sorts first
+        # Deterministic tie-breakers within each bucket:
+        # 1st: opportunity score (descending)
+        # 2nd: reviews_count (descending) – more social proof = stronger business
+        # 3rd: rating (descending) – higher quality = more budget
+        # 4th: website_score (ascending) – worse site = more room to help
+        try:
+            reviews_tb = int(b.get("reviews_count") or 0)
+        except (TypeError, ValueError):
+            reviews_tb = 0
+
+        try:
+            rating_tb = float(b.get("rating") or 0.0)
+        except (TypeError, ValueError):
+            rating_tb = 0.0
+
+        return (bucket, -score, -reviews_tb, -rating_tb, website_score)
 
     return sorted(businesses, key=_score_and_bucket)

@@ -14,6 +14,74 @@ A complete Python Flask backend that scrapes and analyses businesses from **any 
 
 ---
 
+## Grading Rubrics & Score Distribution
+
+### Website Grader (`app/analyzers/website_grader.py`)
+
+Websites are scored on a **0–100 scale** using a 20-item rubric (0/1/2 per item, max 40 raw points, scaled to 100).
+The score is deliberately spread across the full range to make sites meaningfully differentiable:
+
+| Score Band | Meaning |
+|------------|---------|
+| 0–40 | Missing SSL **or** mobile viewport — major technical gaps |
+| 41–55 | SSL + mobile present but no CTAs and no pricing |
+| 56–70 | SSL + mobile + CTAs + pricing, but missing schema / team info |
+| 71–90 | All major signals present (SSL, mobile, CTAs, pricing, team, schema) |
+| 91–100 | Near-perfect: every signal present with strong content depth |
+
+**Rubric sections:**
+- **A – Conversion & Offer Clarity (12 pts):** CTA labels, appointment path, pricing transparency, service pages, objection handling, message consistency
+- **B – Trust & Authority (10 pts):** Named team members, reviews/testimonials, results proof, risk reducers, policies
+- **C – Local SEO & Structure (10 pts):** Local intent keywords, dedicated service pages, internal links, schema markup (LocalBusiness/Service), NAP
+- **D – Technical & UX (8 pts):** Mobile viewport, SSL/HTTPS, image alt text coverage, content depth
+
+Every item's `evidence` field must cite concrete data points (e.g. exact CTA labels, image counts, schema types, price counts).
+`strengths`, `weaknesses`, and `recommendations` each contain **exactly 3 entries** tied to observed signals.
+
+---
+
+### Business AI Analyzer (`app/analyzers/ai_analyzer.py`)
+
+`service_quality_score` spans **3.0–9.5** using clearly defined bands:
+
+| Band | Score | Criteria |
+|------|-------|----------|
+| Poor | 3.0–4.4 | Rating <3.5 or <5 reviews AND no pricing AND no team |
+| Below average | 4.5–5.9 | Rating 3.5–3.9, few reviews, sparse info |
+| Average | 6.0–7.0 | Rating 4.0–4.2, 10–49 reviews, some info |
+| Good | 7.1–8.0 | Rating 4.3–4.6, 50–199 reviews, pricing or team visible |
+| Very good | 8.1–9.0 | Rating 4.7–4.8, 200+ reviews, pricing AND team visible |
+| Excellent | 9.1–9.5 | Rating 4.9–5.0, 500+ reviews, full info + strong social |
+
+The `service_quality_reasoning` field always cites the specific rating, review count, pricing status, team size, and social presence.
+
+---
+
+### Opportunity Score & Lead Ranking (`app/analyzers/lead_ranker.py`)
+
+The **opportunity score** (0–100) measures how attractive a business is for marketing outreach.  
+It is calculated from the following factors:
+
+| Factor | Signal | Points |
+|--------|--------|--------|
+| Website quality (inverted) | Terrible site (<40) = large gap to fix | up to +25 |
+| Business health | Rating ≥4.5 + ≥50 reviews | up to +20 |
+| Social followers | >5,000 followers = digital-aware client | up to +12 |
+| Social engagement rate | ≥4% engagement = responsive audience | up to +6 |
+| Pricing transparency | No pricing shown = clear improvement to sell | +8 |
+| Team size | ≥3 members = larger budget | up to +10 |
+| Service breadth | ≥5 services listed | +5 |
+| Website sweet spot | Has website scoring 30–60 | +15 |
+
+**Lead ranking** sorts businesses into three buckets:
+1. Qualified + non-excellent website (best prospects)
+2. Qualified + excellent website (deprioritised — less to improve)
+3. Not qualified
+
+Within each bucket, ties are broken deterministically by: opportunity score → reviews count → rating → website score (ascending).
+
+---
+
 ## Project Structure
 
 ```
